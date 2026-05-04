@@ -29,7 +29,7 @@ const navItems: NavItem[] = [
       { id: 27, text: 'XSLT Compare', shortText: 'X', path: '/tools/xslt-diff' },
       { id: 28, text: 'SQL Compare', shortText: 'C', path: '/tools/sql-compare' },
       { id: 29, text: 'SQL Practice', shortText: 'S', path: '/tools/sql-practice' },
-      { id: 30, text: 'CSV/XLSX to JSON', shortText: 'C', path: '/tools/csv-xlsx-to-json' },
+      { id: 30, text: 'CSV/XLSX Parser', shortText: 'C', path: '/tools/csv-xlsx-to-json' },
     ],
   },
   { id: 3, text: 'History', shortText: 'H', path: '/history' },

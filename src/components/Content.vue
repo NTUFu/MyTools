@@ -38,9 +38,9 @@ const toolCards: ToolCard[] = [
   },
   {
     id: 'csv-xlsx-json',
-    name: 'CSV/XLSX to JSON',
+    name: 'CSV/XLSX Parser',
     path: '/tools/csv-xlsx-to-json',
-    description: '上傳 CSV 或 XLSX 並轉換為 JSON',
+    description: '上傳 CSV 或 XLSX，瀏覽表格並匯出 JSON/CSV/TXT',
     category: '數據格式化',
   },
   {

@@ -179,7 +179,7 @@ npm version patch --no-git-tag-version
 | JSON Formatter | `/tools/json-formatter` | Format / Minify、語法校驗、複製結果、可搜尋的格式化預覽、儲存此次轉換 |
 | HTML Previewer | `/tools/html-previewer` | CodeMirror HTML 編輯器（行號、syntax highlighting）、即時預覽、格式化 HTML、全屏預覽、儲存此次轉換 |
 | Markdown Previewer | `/tools/markdown-previewer` | 即時渲染、`marked` 解析、HTML 渲染結果全屏預覽、儲存此次轉換 |
-| CSV/XLSX 轉 JSON | `/tools/csv-xlsx-to-json` | 上傳 .csv 或 .xlsx 並轉換為 JSON、格式化 / 壓縮 JSON、複製結果、格式不符合時顯示錯誤 |
+| CSV/XLSX Parser | `/tools/csv-xlsx-to-json` | 上傳 .csv / .xlsx 分頁瀏覽表格；關鍵字搜尋（符合列黃底標記、僅顯示符合列）；單筆編輯（儲存後即時反映）、單筆刪除（含資料預覽確認 Modal）；可設定分隔符號匯出 JSON / CSV / TXT，匯出以畫面最後呈現資料為準；行號欄凍結，編輯模式同時凍結操作欄 |
 | QRCode Previewer | `/tools/qrious` | 即時產生 QR Code、上傳圖片解碼、儲存此次轉換（編碼/解碼） |
 | XSLT 比較器 | `/tools/xslt-diff` | 上傳或貼上兩份 XSLT / XML，逐行比較並以左右分割視圖高亮差異、儲存此次轉換 |
 | SQL 比較器 | `/tools/sql-compare` | 上傳或貼上兩份 SQL，自訂 Regex 比較條件，列出左右缺少清單並可儲存結果 |
