@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { html as htmlBeautify } from 'js-beautify'
 import { useHistoryStore } from '../../stores/history'
 import { EditorView, basicSetup } from 'codemirror'
@@ -20,7 +20,9 @@ const htmlInput = ref('<h1>Hello, MyTools!</h1>\n<p style="color: blue;">在這�
 const saveStatus = ref<'none' | 'saved'>('none')
 const errorMessage = ref('')
 const iframeRef = ref<HTMLIFrameElement | null>(null)
+const fullscreenIframeRef = ref<HTMLIFrameElement | null>(null)
 const editorContainer = ref<HTMLDivElement | null>(null)
+const isFullscreen = ref(false)
 let editorView: EditorView | null = null
 
 // Flag to avoid recursive watch ↔ editor sync
@@ -42,13 +44,18 @@ const buildPreviewHtml = (content: string): string => `<!DOCTYPE html>
   </body>
 </html>`
 
-const updatePreview = () => {
-  if (!iframeRef.value) return
-  const iframeDoc = iframeRef.value.contentDocument || iframeRef.value.contentWindow?.document
+const writePreviewToIframe = (iframe: HTMLIFrameElement | null) => {
+  if (!iframe) return
+  const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
   if (!iframeDoc) return
   iframeDoc.open()
   iframeDoc.write(buildPreviewHtml(htmlInput.value))
   iframeDoc.close()
+}
+
+const updatePreview = () => {
+  writePreviewToIframe(iframeRef.value)
+  writePreviewToIframe(fullscreenIframeRef.value)
 }
 
 const handleSaveCurrent = () => {
@@ -75,6 +82,15 @@ const handleFormat = () => {
     htmlInput.value = formatHtmlContent(htmlInput.value)
   } catch {
     errorMessage.value = 'HTML 格式化失敗，請檢查代碼是否有嚴重錯誤。'
+  }
+}
+
+const toggleFullscreen = async () => {
+  isFullscreen.value = !isFullscreen.value
+  if (isFullscreen.value) {
+    // Wait until fullscreen iframe is mounted before writing preview content
+    await nextTick()
+    writePreviewToIframe(fullscreenIframeRef.value)
   }
 }
 
@@ -168,7 +184,17 @@ onUnmounted(() => {
       </div>
 
       <div style="flex: 1; min-width: 0; display: flex; flex-direction: column">
-        <label style="margin-bottom: 5px">預覽結果:</label>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px">
+          <label style="margin: 0">預覽結果:</label>
+          <button
+            @click="toggleFullscreen"
+            class="tool-button"
+            style="--tool-button-bg: #1976d2; padding: 4px 12px; font-size: 12px"
+            title="全屏顯示"
+          >
+            ⛶
+          </button>
+        </div>
         <iframe
           ref="iframeRef"
           title="HTML Preview"
@@ -176,6 +202,49 @@ onUnmounted(() => {
           sandbox="allow-forms allow-modals allow-popups allow-scripts allow-same-origin"
         />
       </div>
+    </div>
+
+    <!-- 全屏預覽模態框 -->
+    <div
+      v-if="isFullscreen"
+      style="
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #f5f5f5;
+        z-index: 10000;
+        display: flex;
+        flex-direction: column;
+        padding: 20px;
+        box-sizing: border-box;
+      "
+    >
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px">
+        <h3 style="margin: 0">HTML 預覽 - 全屏模式</h3>
+        <button
+          @click="toggleFullscreen"
+          class="tool-button"
+          style="--tool-button-bg: #d32f2f; padding: 8px 16px"
+          title="關閉全屏"
+        >
+          ✕
+        </button>
+      </div>
+      <iframe
+        ref="fullscreenIframeRef"
+        title="HTML Fullscreen Preview"
+        style="
+          flex: 1;
+          width: 100%;
+          border: 1px solid #ccc;
+          background-color: white;
+          box-sizing: border-box;
+          border-radius: 5px;
+        "
+        sandbox="allow-forms allow-modals allow-popups allow-scripts allow-same-origin"
+      />
     </div>
   </div>
 </template>

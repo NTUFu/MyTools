@@ -8,6 +8,11 @@ const historyStore = useHistoryStore()
 const markdownInput = ref('')
 const saveStatus = ref<'none' | 'saved'>('none')
 const errorMessage = ref('')
+const isFullscreen = ref(false)
+
+const toggleFullscreen = () => {
+  isFullscreen.value = !isFullscreen.value
+}
 
 const placeholderText =
   '請輸入 Markdown 文本，例如：\n# 這是標題一\n\n這是一段 **粗體** 和 *斜體* 的文本。\n\n* 列表項目一\n* 列表項目二\n\n```javascript\n// 這是程式碼區塊\nconsole.log("Hello world");\n```\n\n[Google 連結](https://www.google.com)'
@@ -77,12 +82,56 @@ const handleSaveCurrent = () => {
       </div>
 
       <div style="flex: 1; position: relative; min-width: 0; display: flex; flex-direction: column">
-        <label style="font-weight: bold; margin-bottom: 8px">HTML 預覽 (渲染結果)</label>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px">
+          <label style="font-weight: bold; margin: 0">HTML 預覽 (渲染結果)</label>
+          <button
+            @click="toggleFullscreen"
+            class="tool-button"
+            style="--tool-button-bg: #1976d2; padding: 4px 12px; font-size: 12px"
+            title="全屏顯示"
+          >
+            ⛶
+          </button>
+        </div>
         <div
           style="border: 1px solid #ccc; padding: 15px; border-radius: 5px; flex-grow: 1; min-height: 300px; overflow-y: auto; line-height: 1.6; font-size: 1em"
           v-html="htmlOutput"
         />
       </div>
+    </div>
+
+    <!-- 全屏預覽模態框 -->
+    <div
+      v-if="isFullscreen"
+      style="
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: white;
+        z-index: 10000;
+        display: flex;
+        flex-direction: column;
+        padding: 20px;
+        box-sizing: border-box;
+      "
+    >
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px">
+        <h3 style="margin: 0">HTML 預覽 - 全屏模式</h3>
+        <button
+          @click="toggleFullscreen"
+          class="tool-button"
+          style="--tool-button-bg: #d32f2f; padding: 8px 16px"
+          title="關閉全屏"
+        >
+          ✕
+        </button>
+      </div>
+      <div
+        style="flex: 1; border: 1px solid #ccc; padding: 15px; border-radius: 5px; overflow-y: auto; line-height: 1.6; font-size: 1em; background-color: white"
+        v-html="htmlOutput"
+      />
     </div>
   </div>
 </template>

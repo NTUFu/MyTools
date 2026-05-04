@@ -15,7 +15,9 @@
 - `Pinia` 管理 UI 狀態與轉換歷史，資料持久化於 `localStorage`。
 - 模組化元件設計，方便持續新增工具。
 - 支援本地開發、正式打包與靜態站預覽。
-- HTML 預覽器內建 CodeMirror 編輯器，提供行號與 HTML syntax highlighting。
+- HTML 預覽器內建 CodeMirror 編輯器，提供行號與 HTML syntax highlighting，支援全屏預覽。
+- Markdown 預覽器支援 HTML 渲染結果全屏顯示。
+- CSV/XLSX 轉 JSON 工具，支援格式化、壓縮與複製結果，格式不符合時顯示錯誤。
 - 各工具可手動儲存「此次轉換 raw data」，並集中在存檔歷史檢視與刪除。
 
 ---
@@ -175,8 +177,9 @@ npm version patch --no-git-tag-version
 | Base64 編解碼 | `/tools/base64` | UTF-8 / ASCII 轉換、雙向編解碼、錯誤提示、儲存此次轉換 |
 | JWT Decoder | `/tools/jwt-decoder` | 解析 JWT Header/Payload、exp/iat/nbf 時間欄位轉換、儲存此次轉換 |
 | JSON Formatter | `/tools/json-formatter` | Format / Minify、語法校驗、複製結果、可搜尋的格式化預覽、儲存此次轉換 |
-| HTML Previewer | `/tools/html-previewer` | CodeMirror HTML 編輯器（行號、syntax highlighting）、即時預覽、格式化 HTML、儲存此次轉換 |
-| Markdown Previewer | `/tools/markdown-previewer` | 即時渲染、`marked` 解析、儲存此次轉換 |
+| HTML Previewer | `/tools/html-previewer` | CodeMirror HTML 編輯器（行號、syntax highlighting）、即時預覽、格式化 HTML、全屏預覽、儲存此次轉換 |
+| Markdown Previewer | `/tools/markdown-previewer` | 即時渲染、`marked` 解析、HTML 渲染結果全屏預覽、儲存此次轉換 |
+| CSV/XLSX 轉 JSON | `/tools/csv-xlsx-to-json` | 上傳 .csv 或 .xlsx 並轉換為 JSON、格式化 / 壓縮 JSON、複製結果、格式不符合時顯示錯誤 |
 | QRCode Previewer | `/tools/qrious` | 即時產生 QR Code、上傳圖片解碼、儲存此次轉換（編碼/解碼） |
 | XSLT 比較器 | `/tools/xslt-diff` | 上傳或貼上兩份 XSLT / XML，逐行比較並以左右分割視圖高亮差異、儲存此次轉換 |
 | SQL 比較器 | `/tools/sql-compare` | 上傳或貼上兩份 SQL，自訂 Regex 比較條件，列出左右缺少清單並可儲存結果 |
