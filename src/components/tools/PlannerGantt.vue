@@ -34,8 +34,8 @@ interface BucketOverviewRow {
   totalDays: number
   minStart: Date
   maxFinish: Date
-  left: number
-  width: number
+  leftPct: number
+  widthPct: number
 }
 
 const isParsing = ref(false)
@@ -52,7 +52,6 @@ const collapsedBuckets = ref<Record<string, boolean>>({})
 const dayWidth = ref(28)
 const now = new Date()
 const TASK_LABEL_WIDTH = 270
-const OVERVIEW_DAY_WIDTH = 12
 const OVERVIEW_BUCKET_COL_WIDTH = 180
 const OVERVIEW_DAYS_COL_WIDTH = 80
 const OVERVIEW_DATE_COL_WIDTH = 120
@@ -531,26 +530,8 @@ const overviewRangeLabel = computed(() => {
   return `${formatDate(overviewRange.value.start)} ~ ${formatDate(overviewRange.value.finish)}`
 })
 
-const overviewTimelineWidth = computed(() => {
-  if (!overviewRange.value) {
-    return 0
-  }
-
-  return overviewRange.value.totalDays * OVERVIEW_DAY_WIDTH
-})
-
 const overviewGridTemplateColumns = computed(() => {
-  return `${OVERVIEW_BUCKET_COL_WIDTH}px ${OVERVIEW_DAYS_COL_WIDTH}px ${OVERVIEW_DATE_COL_WIDTH}px ${OVERVIEW_DATE_COL_WIDTH}px ${overviewTimelineWidth.value}px`
-})
-
-const overviewTotalWidth = computed(() => {
-  return (
-    OVERVIEW_BUCKET_COL_WIDTH
-    + OVERVIEW_DAYS_COL_WIDTH
-    + OVERVIEW_DATE_COL_WIDTH
-    + OVERVIEW_DATE_COL_WIDTH
-    + overviewTimelineWidth.value
-  )
+  return `${OVERVIEW_BUCKET_COL_WIDTH}px ${OVERVIEW_DAYS_COL_WIDTH}px ${OVERVIEW_DATE_COL_WIDTH}px ${OVERVIEW_DATE_COL_WIDTH}px minmax(360px, 1fr)`
 })
 
 const overviewTimelineDays = computed(() => {
@@ -567,7 +548,12 @@ const overviewTimelineDays = computed(() => {
 })
 
 const overviewMonthSegments = computed(() => {
-  const segments: Array<{ label: string; length: number }> = []
+  const range = overviewRange.value
+  if (!range) {
+    return [] as Array<{ label: string; length: number; widthPct: number }>
+  }
+
+  const segments: Array<{ label: string; length: number; widthPct: number }> = []
 
   for (const date of overviewTimelineDays.value) {
     const label = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
@@ -575,8 +561,9 @@ const overviewMonthSegments = computed(() => {
 
     if (last && last.label === label) {
       last.length += 1
+      last.widthPct = (last.length / range.totalDays) * 100
     } else {
-      segments.push({ label, length: 1 })
+      segments.push({ label, length: 1, widthPct: (1 / range.totalDays) * 100 })
     }
   }
 
@@ -613,16 +600,16 @@ const bucketOverviewRows = computed<BucketOverviewRow[]>(() => {
       }
 
       const totalDays = Math.max(1, dayDiff(minStart, maxFinish) + 1)
-      const left = dayDiff(range.start, minStart) * OVERVIEW_DAY_WIDTH
-      const width = Math.max(8, totalDays * OVERVIEW_DAY_WIDTH)
+      const leftPct = (dayDiff(range.start, minStart) / range.totalDays) * 100
+      const widthPct = Math.max((1 / range.totalDays) * 100, (totalDays / range.totalDays) * 100)
 
       return {
         name: group.bucketName,
         totalDays,
         minStart,
         maxFinish,
-        left,
-        width,
+        leftPct,
+        widthPct,
       }
     })
     .filter((row): row is BucketOverviewRow => row !== null)
@@ -946,7 +933,7 @@ const selectedTask = computed(() => tasks.value.find((task) => task.id === selec
         <div class="overview-table">
           <div
             class="overview-table-head"
-            :style="{ gridTemplateColumns: overviewGridTemplateColumns, minWidth: `${overviewTotalWidth}px` }"
+            :style="{ gridTemplateColumns: overviewGridTemplateColumns }"
           >
             <div>貯體</div>
             <div>總天數</div>
@@ -958,7 +945,7 @@ const selectedTask = computed(() => tasks.value.find((task) => task.id === selec
                   v-for="segment in overviewMonthSegments"
                   :key="segment.label"
                   class="overview-axis-month"
-                  :style="{ width: `${segment.length * OVERVIEW_DAY_WIDTH}px` }"
+                  :style="{ width: `${segment.widthPct}%` }"
                 >
                   {{ segment.label }}
                 </div>
@@ -970,17 +957,17 @@ const selectedTask = computed(() => tasks.value.find((task) => task.id === selec
             v-for="row in bucketOverviewRows"
             :key="row.name"
             class="overview-table-row"
-            :style="{ gridTemplateColumns: overviewGridTemplateColumns, minWidth: `${overviewTotalWidth}px` }"
+            :style="{ gridTemplateColumns: overviewGridTemplateColumns }"
           >
             <div class="overview-cell bucket-name-cell">{{ row.name }}</div>
             <div class="overview-cell">{{ row.totalDays }}</div>
             <div class="overview-cell">{{ formatDate(row.minStart) }}</div>
             <div class="overview-cell">{{ formatDate(row.maxFinish) }}</div>
             <div class="overview-track-cell">
-              <div class="overview-track" :style="{ width: `${overviewTimelineWidth}px` }">
+              <div class="overview-track">
                 <div
                   class="overview-track-bar"
-                  :style="{ left: `${row.left}px`, width: `${row.width}px` }"
+                  :style="{ left: `${row.leftPct}%`, width: `${row.widthPct}%` }"
                 ></div>
               </div>
             </div>
@@ -1268,6 +1255,7 @@ const selectedTask = computed(() => tasks.value.find((task) => task.id === selec
 
 .overview-axis-month-row {
   display: flex;
+  width: 100%;
 }
 
 .overview-axis-month {
@@ -1330,6 +1318,7 @@ const selectedTask = computed(() => tasks.value.find((task) => task.id === selec
 
 .overview-track {
   position: relative;
+  width: 100%;
   height: 20px;
   border-radius: 6px;
   background-image:
