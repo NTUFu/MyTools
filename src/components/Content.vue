@@ -78,9 +78,16 @@ const toolCards: ToolCard[] = [
     description: '預設家具訂單資料、Schema 設定、JSON 匯入與 SQL 練習',
     category: '資料與 SQL',
   },
+  {
+    id: 'planner-gantt',
+    name: 'Planner Gantt',
+    path: '/tools/planner-gantt',
+    description: '匯入 Microsoft Planner XLSX 並生成可互動甘特圖',
+    category: '專案管理',
+  },
 ]
 
-const categories = ['編碼轉換', '數據格式化', '內容預覽', 'XML / XSLT', '資料與 SQL']
+const categories = ['編碼轉換', '數據格式化', '內容預覽', 'XML / XSLT', '資料與 SQL', '專案管理']
 </script>
 
 <template>

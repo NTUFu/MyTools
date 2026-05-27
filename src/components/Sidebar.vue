@@ -30,6 +30,7 @@ const navItems: NavItem[] = [
       { id: 28, text: 'SQL Compare', shortText: 'C', path: '/tools/sql-compare' },
       { id: 29, text: 'SQL Practice', shortText: 'S', path: '/tools/sql-practice' },
       { id: 30, text: 'CSV/XLSX Parser', shortText: 'C', path: '/tools/csv-xlsx-to-json' },
+      { id: 31, text: 'Planner Gantt', shortText: 'P', path: '/tools/planner-gantt' },
     ],
   },
   { id: 3, text: 'History', shortText: 'H', path: '/history' },
