@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import * as XLSX from 'xlsx'
 import { toPng } from 'html-to-image'
 
@@ -8,9 +8,12 @@ interface PlannerTask {
   name: string
   bucketId: string
   bucketName: string
+  departments: string[]
   status: string
   priority: string
+  assigneeId: string
   assignee: string
+  createdById: string
   createdBy: string
   notes: string
   startDate: Date | null
@@ -45,6 +48,21 @@ interface BucketOverviewRow {
   widthPct: number
 }
 
+interface BucketCompletionStat {
+  name: string
+  taskCount: number
+  completedCount: number
+  avgProgressPct: number
+}
+
+interface TaskContributionStat {
+  id: string
+  name: string
+  bucketName: string
+  progressPct: number
+  contributionPct: number
+}
+
 const isParsing = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
@@ -55,6 +73,8 @@ const ganttCaptureRef = ref<HTMLElement | null>(null)
 
 const tasks = ref<PlannerTask[]>([])
 const collapsedBuckets = ref<Record<string, boolean>>({})
+const selectedDepartmentTags = ref<string[]>([])
+const bucketSortOrder = ref<Record<string, number>>({})
 
 const dayWidth = ref(28)
 const now = new Date()
@@ -66,6 +86,7 @@ const OVERVIEW_DATE_COL_WIDTH = 120
 const activeDrag = ref<DragState | null>(null)
 const selectedTaskId = ref('')
 const isOverviewCollapsed = ref(false)
+const isStatsCollapsed = ref(false)
 
 const normalizeText = (value: unknown) => String(value ?? '').trim()
 
@@ -100,6 +121,17 @@ const formatDate = (value: Date | null) => {
     month: '2-digit',
     day: '2-digit',
   }).format(value)
+}
+
+const formatDateIso = (value: Date | null) => {
+  if (!value) {
+    return ''
+  }
+
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 const parseDateCell = (value: unknown): Date | null => {
@@ -154,6 +186,102 @@ const splitChecklistText = (value: string) => {
     .split(/\r?\n|;|；|、/)
     .map((item) => item.trim())
     .filter((item) => item !== '')
+}
+
+const splitDepartmentText = (value: string) => {
+  return value
+    .split(/\r?\n|;|；|、|,|，|\||\//)
+    .map((item) => item.trim())
+    .filter((item) => item !== '')
+}
+
+const splitUserText = (value: string) => {
+  return value
+    .split(/\r?\n|;|；|、|,|，|\||\//)
+    .map((item) => item.trim())
+    .filter((item) => item !== '')
+}
+
+const dedupeTexts = (values: string[]) => Array.from(new Set(values.map((item) => item.trim()).filter((item) => item !== '')))
+
+const canonicalUserKey = (value: string) => value.replace(/[{}]/g, '').trim()
+
+const addUserNameMapping = (map: Map<string, string>, id: string, name: string) => {
+  const normalizedId = normalizeText(id)
+  const normalizedName = normalizeText(name)
+
+  if (!normalizedId || !normalizedName) {
+    return
+  }
+
+  map.set(normalizedId, normalizedName)
+
+  const canonicalId = canonicalUserKey(normalizedId)
+  if (canonicalId) {
+    map.set(canonicalId, normalizedName)
+  }
+}
+
+const resolveUserDisplayName = (raw: string, userNameMap: Map<string, string>) => {
+  const tokens = splitUserText(raw)
+  if (tokens.length === 0) {
+    return normalizeText(raw)
+  }
+
+  const names = tokens.map((token) => {
+    const normalized = normalizeText(token)
+    return userNameMap.get(normalized) ?? userNameMap.get(canonicalUserKey(normalized)) ?? normalized
+  })
+
+  return dedupeTexts(names).join('、')
+}
+
+const isDepartmentHeader = (header: unknown) => {
+  const normalized = normalizeText(header).toLowerCase().replace(/\s+/g, '')
+  if (!normalized) {
+    return false
+  }
+
+  return /標籤|标签|部門|部门|歸屬部門|所属部门|department|tag|label/.test(normalized)
+}
+
+const getDepartmentColumnIndexes = (headerRow: unknown[]) => {
+  const indexes: number[] = []
+
+  headerRow.forEach((header, index) => {
+    if (isDepartmentHeader(header)) {
+      indexes.push(index)
+    }
+  })
+
+  return indexes
+}
+
+const parseDepartmentTagsFromRow = (row: unknown[], headerMap: Map<string, number>, departmentColumnIndexes: number[]) => {
+  const values: string[] = []
+
+  for (const index of departmentColumnIndexes) {
+    values.push(...splitDepartmentText(normalizeText(row[index] ?? '')))
+  }
+
+  if (values.length === 0) {
+    const fallback = [
+      '部門標籤',
+      '標籤',
+      'Tag',
+      'Tags',
+      'Label',
+      'Labels',
+      '部門',
+      '歸屬部門',
+      'Department',
+      'Departments',
+    ]
+
+    values.push(...splitDepartmentText(normalizeText(readCellByCandidates(row, headerMap, fallback))))
+  }
+
+  return dedupeTexts(values)
 }
 
 const normalizeStatus = (status: string) => status.replace(/\s+/g, '')
@@ -334,6 +462,7 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
   }
 
   const headerMap = toHeaderIndex(headerRow)
+  const departmentColumnIndexes = getDepartmentColumnIndexes(headerRow)
   const checklistMap = parseChecklistSheet(workbook)
 
   const requiredKeys = ['工作識別碼', '工作名稱', '貯體', '狀態', '到期日', '開始日期']
@@ -343,6 +472,8 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
   }
 
   const bucketNameMap = new Map<string, string>()
+  const nextBucketSortOrder: Record<string, number> = {}
+  let bucketOrderIndex = 0
   const bucketSheet = workbook.Sheets['貯體']
   if (bucketSheet) {
     const bucketRows = XLSX.utils.sheet_to_json<unknown[]>(bucketSheet, {
@@ -362,6 +493,10 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
       const name = normalizeText(row[1])
       if (id && name) {
         bucketNameMap.set(id, name)
+        if (nextBucketSortOrder[name] === undefined) {
+          nextBucketSortOrder[name] = bucketOrderIndex
+          bucketOrderIndex += 1
+        }
       }
     }
   }
@@ -376,16 +511,24 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
       defval: '',
     })
 
-    const [, ...body] = userRows
+    const [userHeader, ...body] = userRows
+    const userHeaderMap = Array.isArray(userHeader) ? toHeaderIndex(userHeader) : new Map<string, number>()
+    const userIdKeys = ['使用者識別碼', '使用者ID', '識別碼', 'ID', 'Id', 'User ID', 'User Id', 'Object ID', 'Aad Object Id']
+    const userNameKeys = ['使用者名稱', '顯示名稱', '名稱', 'Name', 'Display Name']
+
     for (const row of body) {
       if (!Array.isArray(row)) {
         continue
       }
 
-      const id = normalizeText(row[0])
-      const name = normalizeText(row[1])
+      const id = normalizeText(readCellByCandidates(row, userHeaderMap, userIdKeys)) || normalizeText(row[0])
+      const name = normalizeText(readCellByCandidates(row, userHeaderMap, userNameKeys)) || normalizeText(row[1])
       if (id && name) {
-        userNameMap.set(id, name)
+        addUserNameMapping(userNameMap, id, name)
+      }
+
+      if (name) {
+        userNameMap.set(name, name)
       }
     }
   }
@@ -396,6 +539,7 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
       const sourceTaskId = normalizeText(readCell(row, headerMap, '工作識別碼'))
       const name = normalizeText(readCell(row, headerMap, '工作名稱'))
       const bucketRaw = normalizeText(readCell(row, headerMap, '貯體'))
+      const departments = parseDepartmentTagsFromRow(row, headerMap, departmentColumnIndexes)
       const status = normalizeText(readCell(row, headerMap, '狀態'))
       const priority = normalizeText(readCell(row, headerMap, '優先順序'))
       const assigneeRaw = normalizeText(readCell(row, headerMap, '指派至'))
@@ -418,10 +562,13 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
         name: name || '(未命名工作)',
         bucketId: bucketRaw,
         bucketName: bucketNameMap.get(bucketRaw) ?? bucketRaw ?? '未分類',
+        departments,
         status,
         priority,
-        assignee: userNameMap.get(assigneeRaw) ?? assigneeRaw,
-        createdBy: userNameMap.get(createdByRaw) ?? createdByRaw,
+        assigneeId: assigneeRaw,
+        assignee: resolveUserDisplayName(assigneeRaw, userNameMap),
+        createdById: createdByRaw,
+        createdBy: resolveUserDisplayName(createdByRaw, userNameMap),
         notes,
         startDate,
         dueDate,
@@ -435,7 +582,17 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
     throw new Error('沒有找到可顯示的工作資料。')
   }
 
+  for (const task of parsedTasks) {
+    const bucketName = task.bucketName || '未分類'
+    if (nextBucketSortOrder[bucketName] === undefined) {
+      nextBucketSortOrder[bucketName] = bucketOrderIndex
+      bucketOrderIndex += 1
+    }
+  }
+
   tasks.value = parsedTasks
+  bucketSortOrder.value = nextBucketSortOrder
+  selectedDepartmentTags.value = dedupeTexts(parsedTasks.flatMap((task) => task.departments)).sort((a, b) => a.localeCompare(b, 'zh-Hant'))
   collapsedBuckets.value = {}
   selectedTaskId.value = parsedTasks[0].id
 }
@@ -476,10 +633,32 @@ const handleFileImport = async (event: Event) => {
   }
 }
 
+const allDepartmentTags = computed(() => {
+  return dedupeTexts(tasks.value.flatMap((task) => task.departments)).sort((a, b) => a.localeCompare(b, 'zh-Hant'))
+})
+
+const selectedDepartmentTagSet = computed(() => new Set(selectedDepartmentTags.value))
+
+const filteredTasks = computed(() => {
+  if (allDepartmentTags.value.length === 0) {
+    return tasks.value
+  }
+
+  if (selectedDepartmentTags.value.length === 0) {
+    return []
+  }
+
+  if (selectedDepartmentTags.value.length === allDepartmentTags.value.length) {
+    return tasks.value
+  }
+
+  return tasks.value.filter((task) => task.departments.some((tag) => selectedDepartmentTagSet.value.has(tag)))
+})
+
 const groupedTasks = computed(() => {
   const groups = new Map<string, PlannerTask[]>()
 
-  for (const task of tasks.value) {
+  for (const task of filteredTasks.value) {
     const bucketName = task.bucketName || '未分類'
     if (!groups.has(bucketName)) {
       groups.set(bucketName, [])
@@ -488,22 +667,43 @@ const groupedTasks = computed(() => {
     groups.get(bucketName)?.push(task)
   }
 
-  return Array.from(groups.entries()).map(([bucketName, items]) => ({
-    bucketName,
-    items: items.sort((a, b) => {
-      const startDiff = getTaskStart(a).getTime() - getTaskStart(b).getTime()
-      if (startDiff !== 0) {
-        return startDiff
+  return Array.from(groups.entries())
+    .sort(([aName], [bName]) => {
+      const aOrder = bucketSortOrder.value[aName]
+      const bOrder = bucketSortOrder.value[bName]
+      const hasAOrder = aOrder !== undefined
+      const hasBOrder = bOrder !== undefined
+
+      if (hasAOrder && hasBOrder) {
+        return aOrder - bOrder
       }
 
-      const endDiff = getTaskEnd(a).getTime() - getTaskEnd(b).getTime()
-      if (endDiff !== 0) {
-        return endDiff
+      if (hasAOrder) {
+        return -1
       }
 
-      return a.name.localeCompare(b.name, 'zh-Hant')
-    }),
-  }))
+      if (hasBOrder) {
+        return 1
+      }
+
+      return aName.localeCompare(bName, 'zh-Hant')
+    })
+    .map(([bucketName, items]) => ({
+      bucketName,
+      items: items.sort((a, b) => {
+        const startDiff = getTaskStart(a).getTime() - getTaskStart(b).getTime()
+        if (startDiff !== 0) {
+          return startDiff
+        }
+
+        const endDiff = getTaskEnd(a).getTime() - getTaskEnd(b).getTime()
+        if (endDiff !== 0) {
+          return endDiff
+        }
+
+        return a.name.localeCompare(b.name, 'zh-Hant')
+      }),
+    }))
 })
 
 const visibleTasks = computed(() => {
@@ -519,6 +719,75 @@ const visibleTasks = computed(() => {
 
   return rows
 })
+
+const displayedTagSummary = computed(() => {
+  const allCount = allDepartmentTags.value.length
+  const selectedCount = selectedDepartmentTags.value.length
+
+  if (allCount === 0) {
+    return '未偵測到部門標籤，甘特圖顯示全部任務。'
+  }
+
+  if (selectedCount === 0) {
+    return '目前未選擇任何標籤，甘特圖不顯示任務。'
+  }
+
+  if (selectedCount === allCount) {
+    return `目前顯示全部標籤任務（${allCount} 個標籤）。`
+  }
+
+  return `目前顯示 ${selectedCount}/${allCount} 個標籤任務：${selectedDepartmentTags.value.join('、')}`
+})
+
+const selectedTagDropdownLabel = computed(() => {
+  const allCount = allDepartmentTags.value.length
+  const selectedCount = selectedDepartmentTags.value.length
+
+  if (allCount === 0) {
+    return '未偵測到標籤'
+  }
+
+  if (selectedCount === 0) {
+    return '未選擇標籤'
+  }
+
+  if (selectedCount === allCount) {
+    return `全部標籤（${allCount}）`
+  }
+
+  return `已選 ${selectedCount}/${allCount}`
+})
+
+const isTagSelected = (tag: string) => selectedDepartmentTagSet.value.has(tag)
+
+const toggleDepartmentTag = (tag: string) => {
+  if (isTagSelected(tag)) {
+    selectedDepartmentTags.value = selectedDepartmentTags.value.filter((item) => item !== tag)
+    return
+  }
+
+  selectedDepartmentTags.value = [...selectedDepartmentTags.value, tag].sort((a, b) => a.localeCompare(b, 'zh-Hant'))
+}
+
+const selectAllDepartmentTags = () => {
+  selectedDepartmentTags.value = [...allDepartmentTags.value]
+}
+
+const clearDepartmentTags = () => {
+  selectedDepartmentTags.value = []
+}
+
+watch([filteredTasks, selectedTaskId], ([currentFiltered, currentSelectedId]) => {
+  if (currentFiltered.length === 0) {
+    selectedTaskId.value = ''
+    return
+  }
+
+  const hasSelected = currentFiltered.some((task) => task.id === currentSelectedId)
+  if (!hasSelected) {
+    selectedTaskId.value = currentFiltered[0].id
+  }
+}, { immediate: true })
 
 const timelineStart = computed(() => {
   if (tasks.value.length === 0) {
@@ -582,10 +851,30 @@ const monthSegments = computed(() => {
 
 const chartWidth = computed(() => totalDays.value * dayWidth.value)
 const timelineTotalWidth = computed(() => TASK_LABEL_WIDTH + chartWidth.value)
+const timelineRenderWidth = computed(() => `max(${timelineTotalWidth.value}px, 100%)`)
 
 const isTaskCompleted = (task: PlannerTask) => {
   const normalized = normalizeStatus(task.status)
   return normalized.includes('完成') || task.completedDate !== null
+}
+
+const getTaskProgressPct = (task: PlannerTask) => {
+  if (isTaskCompleted(task)) {
+    return 100
+  }
+
+  const total = task.checklistItems.length
+  if (total > 0) {
+    const completed = task.checklistItems.filter((item) => item.completed).length
+    return Math.round((completed / total) * 100)
+  }
+
+  const normalized = normalizeStatus(task.status)
+  if (normalized.includes('進行中')) {
+    return 50
+  }
+
+  return 0
 }
 
 const dashboardMetrics = computed(() => {
@@ -614,6 +903,112 @@ const dashboardMetrics = computed(() => {
     dueSoon,
   }
 })
+
+const overallCompletionRate = computed(() => {
+  if (tasks.value.length === 0) {
+    return 0
+  }
+
+  const progressSum = tasks.value.reduce((sum, task) => sum + getTaskProgressPct(task), 0)
+  return Math.round((progressSum / (tasks.value.length * 100)) * 100)
+})
+
+const progressDistribution = computed(() => {
+  let done = 0
+  let inProgress = 0
+  let notStarted = 0
+
+  for (const task of tasks.value) {
+    const progress = getTaskProgressPct(task)
+    if (progress >= 100) {
+      done += 1
+    } else if (progress > 0) {
+      inProgress += 1
+    } else {
+      notStarted += 1
+    }
+  }
+
+  return { done, inProgress, notStarted }
+})
+
+const bucketCompletionRates = computed<BucketCompletionStat[]>(() => {
+  const bucketMap = new Map<string, PlannerTask[]>()
+
+  for (const task of tasks.value) {
+    const key = task.bucketName || '未分類'
+    if (!bucketMap.has(key)) {
+      bucketMap.set(key, [])
+    }
+
+    bucketMap.get(key)?.push(task)
+  }
+
+  return Array.from(bucketMap.entries())
+    .map(([name, items]) => {
+      const taskCount = items.length
+      const completedCount = items.filter((task) => isTaskCompleted(task)).length
+      const progressSum = items.reduce((sum, task) => sum + getTaskProgressPct(task), 0)
+      const avgProgressPct = taskCount === 0 ? 0 : Math.round(progressSum / taskCount)
+
+      return {
+        name,
+        taskCount,
+        completedCount,
+        avgProgressPct,
+      }
+    })
+    .sort((a, b) => {
+      if (b.avgProgressPct !== a.avgProgressPct) {
+        return b.avgProgressPct - a.avgProgressPct
+      }
+
+      return b.taskCount - a.taskCount
+    })
+})
+
+const taskContributionRates = computed<TaskContributionStat[]>(() => {
+  const items = tasks.value.map((task) => ({
+    id: task.id,
+    name: task.name,
+    bucketName: task.bucketName || '未分類',
+    progressPct: getTaskProgressPct(task),
+  }))
+
+  const bucketProgressTotalMap = new Map<string, number>()
+  for (const item of items) {
+    const current = bucketProgressTotalMap.get(item.bucketName) ?? 0
+    bucketProgressTotalMap.set(item.bucketName, current + item.progressPct)
+  }
+
+  return items
+    .map((item) => ({
+      ...item,
+      contributionPct: (bucketProgressTotalMap.get(item.bucketName) ?? 0) > 0
+        ? Number(((item.progressPct / (bucketProgressTotalMap.get(item.bucketName) ?? 0)) * 100).toFixed(1))
+        : 0,
+    }))
+    .sort((a, b) => {
+      const bucketCompare = a.bucketName.localeCompare(b.bucketName, 'zh-Hant')
+      if (bucketCompare !== 0) {
+        return bucketCompare
+      }
+
+      if (b.contributionPct !== a.contributionPct) {
+        return b.contributionPct - a.contributionPct
+      }
+
+      return a.name.localeCompare(b.name, 'zh-Hant')
+    })
+})
+
+const contributionBarWidth = (contributionPct: number) => {
+  if (contributionPct <= 0) {
+    return '0%'
+  }
+
+  return `${Math.max(contributionPct, 2)}%`
+}
 
 const overviewRange = computed(() => {
   if (groupedTasks.value.length === 0 || groupedTasks.value[0].items.length === 0) {
@@ -801,6 +1196,65 @@ const downloadOverviewImage = (dataUrl: string) => {
   document.body.removeChild(link)
 }
 
+const exportGanttWorkbook = () => {
+  overviewMessage.value = ''
+
+  if (tasks.value.length === 0) {
+    overviewMessage.value = '目前沒有資料可匯出甘特圖 Excel。'
+    return
+  }
+
+  try {
+    const workbook = XLSX.utils.book_new()
+    const visibleTaskIdSet = new Set(filteredTasks.value.map((task) => task.id))
+    const rows = tasks.value.map((task, index) => {
+      const { start, end } = ensureTaskDates(task)
+      const finish = getTaskFinish(task)
+      const checklistTotal = task.checklistItems.length
+      const checklistCompleted = task.checklistItems.filter((item) => item.completed).length
+
+      return {
+        工作名稱: task.name,
+        排序: index + 1,
+        貯體: task.bucketName,
+        貯體識別碼: task.bucketId,
+        起始日: formatDateIso(start),
+        結束日: formatDateIso(end),
+        完成日: formatDateIso(finish),
+        工期天數: Math.max(1, dayDiff(start, end) + 1),
+        狀態: task.status,
+        優先順序: task.priority,
+        進度百分比: getTaskProgressPct(task),
+        是否完成: isTaskCompleted(task) ? '是' : '否',
+        指派人: task.assignee,
+        指派人識別碼: task.assigneeId,
+        建立者: task.createdBy,
+        建立者識別碼: task.createdById,
+        部門標籤: task.departments.join('、'),
+        檢查清單總數: checklistTotal,
+        檢查清單已完成: checklistCompleted,
+        檢查清單項目: task.checklistItems.map((item) => `${item.completed ? '☑' : '☐'} ${item.title}`).join(' | '),
+        備註: task.notes,
+        目前篩選是否顯示: visibleTaskIdSet.has(task.id) ? '是' : '否',
+        匯出時間UTC: new Date().toISOString(),
+        來源檔名: sourceFileName.value || '',
+      }
+    })
+
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), 'GanttFlat')
+
+    const dateTag = new Date().toISOString().slice(0, 10)
+    XLSX.writeFile(workbook, `planner-gantt-flat-${dateTag}.xlsx`)
+    overviewMessage.value = '單頁甘特圖 Excel 已匯出，可直接用樞紐分析。'
+  } catch (error) {
+    if (error instanceof Error) {
+      overviewMessage.value = `匯出甘特圖 Excel 失敗：${error.message}`
+    } else {
+      overviewMessage.value = '匯出甘特圖 Excel 失敗，請再試一次。'
+    }
+  }
+}
+
 const copyOverviewToClipboard = async () => {
   overviewMessage.value = ''
 
@@ -894,7 +1348,7 @@ const taskBarStyle = (task: PlannerTask) => {
 }
 
 const taskTrackStyle = computed(() => ({
-  width: `${chartWidth.value}px`,
+  width: `max(${chartWidth.value}px, calc(100% - ${TASK_LABEL_WIDTH}px))`,
   backgroundImage:
     'repeating-linear-gradient(to right, rgba(148, 163, 184, 0.24) 0 1px, transparent 1px var(--day-width))',
   backgroundSize: 'auto 100%',
@@ -902,13 +1356,13 @@ const taskTrackStyle = computed(() => ({
 }))
 
 const rowStyle = computed(() => ({
-  width: `${timelineTotalWidth.value}px`,
+  width: timelineRenderWidth.value,
 }))
 
 const groupRowStyle = computed(() => ({
-  width: `${timelineTotalWidth.value}px`,
+  width: timelineRenderWidth.value,
   backgroundImage: `linear-gradient(to right, #f8fafc ${TASK_LABEL_WIDTH}px, #f1f5f9 ${TASK_LABEL_WIDTH}px)`,
-  backgroundSize: `${timelineTotalWidth.value}px 100%`,
+  backgroundSize: `${timelineRenderWidth.value} 100%`,
 }))
 
 const barClass = (task: PlannerTask) => {
@@ -1061,8 +1515,21 @@ const selectedChecklistStats = computed(() => {
   return { completed, total }
 })
 
+const selectedTaskDurationDays = computed(() => {
+  if (!selectedTask.value) {
+    return '-'
+  }
+
+  const { start, end } = ensureTaskDates(selectedTask.value)
+  return String(Math.max(1, dayDiff(start, end) + 1))
+})
+
 const toggleOverview = () => {
   isOverviewCollapsed.value = !isOverviewCollapsed.value
+}
+
+const toggleStats = () => {
+  isStatsCollapsed.value = !isStatsCollapsed.value
 }
 </script>
 
@@ -1101,6 +1568,74 @@ const toggleOverview = () => {
       <div class="dashboard-card dashboard-card-soon">
         <div class="dashboard-label">即將到期（7 天內）</div>
         <div class="dashboard-value">{{ dashboardMetrics.dueSoon }}</div>
+      </div>
+    </div>
+
+    <div v-if="tasks.length > 0" class="stats-panel">
+      <div class="stats-panel-header">
+        <div>
+          <div class="stats-panel-title">全部任務統計圖表</div>
+          <div class="stats-panel-subtitle">依目前匯入的全部任務計算，不受部門篩選影響。</div>
+        </div>
+        <button class="stats-toggle-button" type="button" @click="toggleStats">
+          {{ isStatsCollapsed ? '展開統計圖表' : '收合統計圖表' }}
+        </button>
+      </div>
+
+      <div v-show="!isStatsCollapsed" class="stats-kpi-grid">
+        <div class="stats-kpi-card">
+          <div class="stats-kpi-label">總完成率</div>
+          <div class="stats-kpi-value">{{ overallCompletionRate }}%</div>
+          <div class="stats-bar-track">
+            <div class="stats-bar-fill stats-bar-fill-overall" :style="{ width: `${overallCompletionRate}%` }"></div>
+          </div>
+        </div>
+
+        <div class="stats-kpi-card">
+          <div class="stats-kpi-label">任務進度分布</div>
+          <div class="stats-kpi-stack">
+            <span class="stats-chip stats-chip-done">完成 {{ progressDistribution.done }}</span>
+            <span class="stats-chip stats-chip-progress">進行中 {{ progressDistribution.inProgress }}</span>
+            <span class="stats-chip stats-chip-todo">未開始 {{ progressDistribution.notStarted }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div v-show="!isStatsCollapsed" class="stats-chart-grid">
+        <div class="stats-chart-card">
+          <div class="stats-chart-title">貯體完成率</div>
+          <div v-if="bucketCompletionRates.length === 0" class="stats-empty">目前無可用資料</div>
+          <div v-else class="stats-rows">
+            <div v-for="bucket in bucketCompletionRates" :key="bucket.name" class="stats-row">
+              <div class="stats-row-head">
+                <span class="stats-row-name">{{ bucket.name }}</span>
+                <span class="stats-row-value">{{ bucket.avgProgressPct }}%</span>
+              </div>
+              <div class="stats-bar-track">
+                <div class="stats-bar-fill stats-bar-fill-bucket" :style="{ width: `${bucket.avgProgressPct}%` }"></div>
+              </div>
+              <div class="stats-row-meta">完成 {{ bucket.completedCount }} / {{ bucket.taskCount }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="stats-chart-card">
+          <div class="stats-chart-title">每項工作佔該貯體的完成率</div>
+          <div class="stats-chart-subtitle">計算方式：工作進度 / 該貯體全部工作進度總和</div>
+          <div v-if="taskContributionRates.length === 0" class="stats-empty">目前無可用資料</div>
+          <div v-else class="stats-rows stats-rows-scroll">
+            <div v-for="item in taskContributionRates" :key="item.id" class="stats-row">
+              <div class="stats-row-head">
+                <span class="stats-row-name" :title="item.name">{{ item.name }}</span>
+                <span class="stats-row-value">{{ item.contributionPct }}%</span>
+              </div>
+              <div class="stats-bar-track">
+                <div class="stats-bar-fill stats-bar-fill-task" :style="{ width: contributionBarWidth(item.contributionPct) }"></div>
+              </div>
+              <div class="stats-row-meta">{{ item.bucketName }} | 任務進度 {{ item.progressPct }}%</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1182,12 +1717,52 @@ const toggleOverview = () => {
         >
           下載 Overview PNG
         </button>
+        <button
+          class="tool-button"
+          style="--tool-button-bg: #0369a1"
+          type="button"
+          @click="exportGanttWorkbook"
+        >
+          匯出甘特圖 Excel
+        </button>
       </div>
 
       <p v-if="overviewMessage" class="overview-status">{{ overviewMessage }}</p>
     </div>
 
     <div v-if="tasks.length > 0" class="gantt-layout">
+      <div class="gantt-filter-row">
+        <div class="gantt-filter-title">部門標籤篩選</div>
+        <details class="tag-dropdown" :open="false">
+          <summary class="tag-dropdown-summary">{{ selectedTagDropdownLabel }}</summary>
+
+          <div class="tag-dropdown-menu">
+            <div v-if="allDepartmentTags.length === 0" class="tag-filter-empty">此檔案未找到可用的部門標籤欄位。</div>
+
+            <template v-else>
+              <div class="tag-dropdown-actions">
+                <button class="tag-filter-button" type="button" @click="selectAllDepartmentTags">全部</button>
+                <button class="tag-filter-button" type="button" @click="clearDepartmentTags">全不選</button>
+              </div>
+
+              <label
+                v-for="tag in allDepartmentTags"
+                :key="tag"
+                class="tag-dropdown-item"
+              >
+                <input
+                  type="checkbox"
+                  :checked="isTagSelected(tag)"
+                  @change="toggleDepartmentTag(tag)"
+                >
+                <span>{{ tag }}</span>
+              </label>
+            </template>
+          </div>
+        </details>
+      </div>
+      <p class="tag-filter-current">{{ displayedTagSummary }}</p>
+
       <div class="task-panel task-panel-top">
         <div class="summary-card">
           <div class="summary-title">工作摘要</div>
@@ -1228,8 +1803,10 @@ const toggleOverview = () => {
             <div class="selected-kv"><span class="kv-label">優先</span><span class="kv-value">{{ selectedTask.priority || '-' }}</span></div>
             <div class="selected-kv"><span class="kv-label">起日</span><span class="kv-value">{{ formatDate(selectedTask.startDate) }}</span></div>
             <div class="selected-kv"><span class="kv-label">迄日</span><span class="kv-value">{{ formatDate(selectedTask.dueDate) }}</span></div>
+            <div class="selected-kv"><span class="kv-label">天數</span><span class="kv-value">{{ selectedTaskDurationDays }}</span></div>
             <div class="selected-kv"><span class="kv-label">指派</span><span class="kv-value">{{ selectedTask.assignee || '-' }}</span></div>
             <div class="selected-kv"><span class="kv-label">貯體</span><span class="kv-value">{{ selectedTask.bucketName || '-' }}</span></div>
+            <div class="selected-kv"><span class="kv-label">部門標籤</span><span class="kv-value">{{ selectedTask.departments.length > 0 ? selectedTask.departments.join('、') : '-' }}</span></div>
           </div>
 
           <details class="checklist-panel" :open="selectedTask.checklistItems.length > 0 && selectedTask.checklistItems.length <= 4">
@@ -1249,7 +1826,7 @@ const toggleOverview = () => {
       </div>
 
       <section ref="ganttCaptureRef" class="gantt-main">
-        <div class="timeline-header" :style="{ width: `${timelineTotalWidth}px` }">
+        <div class="timeline-header" :style="{ width: timelineRenderWidth }">
           <div class="month-row">
             <div class="timeline-label-spacer" :style="{ width: `${TASK_LABEL_WIDTH}px` }"></div>
             <div
@@ -1298,6 +1875,15 @@ const toggleOverview = () => {
                   <div class="task-meta">
                     {{ task.status || '未設定狀態' }} | {{ formatDate(task.startDate) }} ~
                     {{ formatDate(task.dueDate) }}
+                  </div>
+                  <div v-if="task.departments.length > 0" class="task-tag-row">
+                    <span
+                      v-for="tag in task.departments"
+                      :key="`${task.id}-${tag}`"
+                      class="task-tag-pill"
+                    >
+                      {{ tag }}
+                    </span>
                   </div>
                 </div>
 
@@ -1386,6 +1972,102 @@ const toggleOverview = () => {
   color: #c62828;
 }
 
+.gantt-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tag-filter-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.tag-dropdown {
+  position: relative;
+}
+
+.tag-dropdown-summary {
+  list-style: none;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1e293b;
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tag-dropdown-summary::-webkit-details-marker {
+  display: none;
+}
+
+.tag-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
+  width: 260px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid #d7deea;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tag-dropdown-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.tag-filter-button {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1e293b;
+  font-size: 12px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.tag-filter-button:hover,
+.tag-dropdown-summary:hover {
+  background: #f1f5f9;
+}
+
+.tag-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #334155;
+  padding: 4px 2px;
+  cursor: pointer;
+}
+
+.tag-dropdown-item input {
+  margin: 0;
+}
+
+.tag-filter-empty {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.tag-filter-current {
+  margin: 0;
+  font-size: 12px;
+  color: #334155;
+}
+
 .dashboard-cards {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1425,6 +2107,211 @@ const toggleOverview = () => {
   line-height: 1;
   font-weight: 700;
   color: #1e293b;
+}
+
+.stats-panel {
+  border: 1px solid #d7deea;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fbff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stats-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stats-panel-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.stats-panel-subtitle {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.stats-toggle-button {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1e293b;
+  font-size: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.stats-toggle-button:hover {
+  background: #f1f5f9;
+}
+
+.stats-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stats-kpi-card {
+  border: 1px solid #dbe5f1;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stats-kpi-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.stats-kpi-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  color: #1e40af;
+}
+
+.stats-kpi-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stats-chip {
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+}
+
+.stats-chip-done {
+  color: #166534;
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.stats-chip-progress {
+  color: #92400e;
+  background: #ffedd5;
+  border-color: #fdba74;
+}
+
+.stats-chip-todo {
+  color: #1e3a8a;
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.stats-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stats-chart-card {
+  border: 1px solid #dbe5f1;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stats-chart-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.stats-chart-subtitle {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.stats-empty {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.stats-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stats-rows-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.stats-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stats-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stats-row-name {
+  min-width: 0;
+  font-size: 12px;
+  color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stats-row-value {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.stats-row-meta {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.stats-bar-track {
+  height: 10px;
+  width: 100%;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.stats-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.stats-bar-fill-overall {
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+}
+
+.stats-bar-fill-bucket {
+  background: linear-gradient(90deg, #0ea5e9, #2563eb);
+}
+
+.stats-bar-fill-task {
+  background: linear-gradient(90deg, #f59e0b, #d97706);
 }
 
 .overview-tools {
@@ -1875,9 +2762,10 @@ const toggleOverview = () => {
 
 .task-row {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   border-top: 1px solid #eef2f7;
-  height: 54px;
+  min-height: 62px;
+  padding: 4px 0;
   min-width: max-content;
   box-sizing: border-box;
 }
@@ -1891,6 +2779,9 @@ const toggleOverview = () => {
   width: 270px;
   min-width: 270px;
   padding: 0 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   box-sizing: border-box;
 }
 
@@ -1908,16 +2799,37 @@ const toggleOverview = () => {
   margin-top: 2px;
 }
 
+.task-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.task-tag-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+}
+
 .task-track {
   flex: 0 0 auto;
   position: relative;
-  height: 100%;
+  min-height: 62px;
+  overflow: hidden;
   background-image: linear-gradient(to right, rgba(148, 163, 184, 0.2) 1px, transparent 1px);
 }
 
 .task-bar {
   position: absolute;
-  top: 10px;
+  top: 50%;
+  transform: translateY(-50%);
   height: 34px;
   border-radius: 8px;
   display: flex;
@@ -1974,6 +2886,11 @@ const toggleOverview = () => {
 
 @media (max-width: 960px) {
   .dashboard-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-kpi-grid,
+  .stats-chart-grid {
     grid-template-columns: 1fr;
   }
 
