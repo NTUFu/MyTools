@@ -17,6 +17,13 @@ interface PlannerTask {
   dueDate: Date | null
   completedDate: Date | null
   createdDate: Date | null
+  checklistItems: PlannerChecklistItem[]
+}
+
+interface PlannerChecklistItem {
+  id: string
+  title: string
+  completed: boolean
 }
 
 type DragMode = 'move' | 'resize-start' | 'resize-end'
@@ -58,6 +65,7 @@ const OVERVIEW_DATE_COL_WIDTH = 120
 
 const activeDrag = ref<DragState | null>(null)
 const selectedTaskId = ref('')
+const isOverviewCollapsed = ref(false)
 
 const normalizeText = (value: unknown) => String(value ?? '').trim()
 
@@ -122,6 +130,30 @@ const parseDateCell = (value: unknown): Date | null => {
   }
 
   return null
+}
+
+const parseChecklistCompleted = (value: unknown) => {
+  if (typeof value === 'boolean') {
+    return value
+  }
+
+  if (typeof value === 'number') {
+    return value > 0
+  }
+
+  const text = normalizeText(value).toLowerCase()
+  if (text === '') {
+    return false
+  }
+
+  return ['true', 'yes', 'y', '1', 'done', 'complete', '已完成', '完成', '是'].some((keyword) => text.includes(keyword))
+}
+
+const splitChecklistText = (value: string) => {
+  return value
+    .split(/\r?\n|;|；|、/)
+    .map((item) => item.trim())
+    .filter((item) => item !== '')
 }
 
 const normalizeStatus = (status: string) => status.replace(/\s+/g, '')
@@ -206,6 +238,76 @@ const readCell = (row: unknown[], map: Map<string, number>, key: string) => {
   return row[index] ?? ''
 }
 
+const readCellByCandidates = (row: unknown[], map: Map<string, number>, keys: string[]) => {
+  for (const key of keys) {
+    if (map.has(key)) {
+      return readCell(row, map, key)
+    }
+  }
+
+  return ''
+}
+
+const parseChecklistSheet = (workbook: XLSX.WorkBook) => {
+  const checklistSheetName = workbook.SheetNames.find((name) => name.includes('檢查清單'))
+    ?? workbook.SheetNames.find((name) => name.toLowerCase().includes('checklist'))
+
+  const checklistMap = new Map<string, PlannerChecklistItem[]>()
+  if (!checklistSheetName) {
+    return checklistMap
+  }
+
+  const checklistSheet = workbook.Sheets[checklistSheetName]
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(checklistSheet, {
+    header: 1,
+    blankrows: false,
+    raw: true,
+    defval: '',
+  })
+
+  if (!Array.isArray(matrix) || matrix.length < 2) {
+    return checklistMap
+  }
+
+  const [headerRow, ...rows] = matrix
+  if (!Array.isArray(headerRow)) {
+    return checklistMap
+  }
+
+  const headerMap = toHeaderIndex(headerRow)
+  const taskIdKeys = ['工作識別碼', '工作ID', '工作 Id', 'Task ID', 'Task Id']
+  const titleKeys = ['標題', '名稱', '檢查清單項目', 'Checklist Item', 'Checklist Title']
+  const completedKeys = ['已完成', '完成', '狀態', 'Completed', 'Is Completed']
+
+  for (const row of rows) {
+    if (!Array.isArray(row)) {
+      continue
+    }
+
+    const taskId = normalizeText(readCellByCandidates(row, headerMap, taskIdKeys))
+    if (!taskId) {
+      continue
+    }
+
+    const title = normalizeText(readCellByCandidates(row, headerMap, titleKeys)) || '(未命名檢查項目)'
+    const completed = parseChecklistCompleted(readCellByCandidates(row, headerMap, completedKeys))
+
+    const item: PlannerChecklistItem = {
+      id: createTaskId(),
+      title,
+      completed,
+    }
+
+    if (!checklistMap.has(taskId)) {
+      checklistMap.set(taskId, [])
+    }
+
+    checklistMap.get(taskId)?.push(item)
+  }
+
+  return checklistMap
+}
+
 const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
   const worksheetName = workbook.SheetNames.find((name) => name === '工作')
     ?? workbook.SheetNames.find((name) => name === '合併資料')
@@ -232,6 +334,7 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
   }
 
   const headerMap = toHeaderIndex(headerRow)
+  const checklistMap = parseChecklistSheet(workbook)
 
   const requiredKeys = ['工作識別碼', '工作名稱', '貯體', '狀態', '到期日', '開始日期']
   const missingKeys = requiredKeys.filter((key) => !headerMap.has(key))
@@ -290,7 +393,7 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
   const parsedTasks: PlannerTask[] = rows
     .filter((row) => Array.isArray(row) && row.some((cell) => normalizeText(cell) !== ''))
     .map((row) => {
-      const id = normalizeText(readCell(row, headerMap, '工作識別碼'))
+      const sourceTaskId = normalizeText(readCell(row, headerMap, '工作識別碼'))
       const name = normalizeText(readCell(row, headerMap, '工作名稱'))
       const bucketRaw = normalizeText(readCell(row, headerMap, '貯體'))
       const status = normalizeText(readCell(row, headerMap, '狀態'))
@@ -298,13 +401,20 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
       const assigneeRaw = normalizeText(readCell(row, headerMap, '指派至'))
       const createdByRaw = normalizeText(readCell(row, headerMap, '建立者'))
       const notes = normalizeText(readCell(row, headerMap, '記事'))
+      const checklistRaw = normalizeText(readCell(row, headerMap, '檢查清單項目'))
       const startDate = parseDateCell(readCell(row, headerMap, '開始日期'))
       const dueDate = parseDateCell(readCell(row, headerMap, '到期日'))
       const completedDate = parseDateCell(readCell(row, headerMap, '完成日期'))
       const createdDate = parseDateCell(readCell(row, headerMap, '建立日期'))
+      const checklistFromRow = splitChecklistText(checklistRaw).map((title) => ({
+        id: createTaskId(),
+        title,
+        completed: false,
+      }))
+      const checklistItems = checklistMap.get(sourceTaskId) ?? checklistFromRow
 
       return {
-        id: id || createTaskId(),
+        id: sourceTaskId || createTaskId(),
         name: name || '(未命名工作)',
         bucketId: bucketRaw,
         bucketName: bucketNameMap.get(bucketRaw) ?? bucketRaw ?? '未分類',
@@ -317,6 +427,7 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
         dueDate,
         completedDate,
         createdDate,
+        checklistItems,
       }
     })
 
@@ -379,7 +490,19 @@ const groupedTasks = computed(() => {
 
   return Array.from(groups.entries()).map(([bucketName, items]) => ({
     bucketName,
-    items: items.sort((a, b) => dayDiff(getTaskStart(a), getTaskStart(b))),
+    items: items.sort((a, b) => {
+      const startDiff = getTaskStart(a).getTime() - getTaskStart(b).getTime()
+      if (startDiff !== 0) {
+        return startDiff
+      }
+
+      const endDiff = getTaskEnd(a).getTime() - getTaskEnd(b).getTime()
+      if (endDiff !== 0) {
+        return endDiff
+      }
+
+      return a.name.localeCompare(b.name, 'zh-Hant')
+    }),
   }))
 })
 
@@ -881,6 +1004,66 @@ onBeforeUnmount(() => {
 })
 
 const selectedTask = computed(() => tasks.value.find((task) => task.id === selectedTaskId.value) ?? null)
+
+const isUnassignedAssignee = (assignee: string) => {
+  const normalized = normalizeText(assignee)
+  if (!normalized) {
+    return true
+  }
+
+  return ['-', '未指派', '未分派', 'n/a', 'na'].includes(normalized.toLowerCase())
+}
+
+const assigneeTaskGroups = computed(() => {
+  const map = new Map<string, PlannerTask[]>()
+
+  for (const task of tasks.value) {
+    if (isUnassignedAssignee(task.assignee)) {
+      continue
+    }
+
+    const assignee = normalizeText(task.assignee)
+    if (!map.has(assignee)) {
+      map.set(assignee, [])
+    }
+
+    map.get(assignee)?.push(task)
+  }
+
+  return Array.from(map.entries())
+    .map(([name, items]) => ({
+      name,
+      items: [...items].sort((a, b) => getTaskStart(a).getTime() - getTaskStart(b).getTime()),
+    }))
+    .sort((a, b) => {
+      if (b.items.length !== a.items.length) {
+        return b.items.length - a.items.length
+      }
+
+      return a.name.localeCompare(b.name, 'zh-Hant')
+    })
+})
+
+const unassignedTasks = computed(() => {
+  return tasks.value
+    .filter((task) => isUnassignedAssignee(task.assignee))
+    .slice()
+    .sort((a, b) => getTaskStart(a).getTime() - getTaskStart(b).getTime())
+})
+
+const selectedChecklistStats = computed(() => {
+  if (!selectedTask.value) {
+    return { completed: 0, total: 0 }
+  }
+
+  const total = selectedTask.value.checklistItems.length
+  const completed = selectedTask.value.checklistItems.filter((item) => item.completed).length
+  return { completed, total }
+})
+
+const toggleOverview = () => {
+  isOverviewCollapsed.value = !isOverviewCollapsed.value
+}
 </script>
 
 <template>
@@ -922,11 +1105,17 @@ const selectedTask = computed(() => tasks.value.find((task) => task.id === selec
     </div>
 
     <div v-if="tasks.length > 0" class="overview-tools">
-      <div ref="overviewRef" class="overview-export-card">
-        <div class="overview-header">
+      <div class="overview-header-row">
+        <div class="overview-title-wrap">
           <div class="overview-title">Planner Overview</div>
           <div class="overview-subtitle">{{ sourceFileName || 'Microsoft Planner 匯入資料' }}</div>
         </div>
+        <button class="overview-toggle-button" type="button" @click="toggleOverview">
+          {{ isOverviewCollapsed ? '展開 Overview' : '收合 Overview' }}
+        </button>
+      </div>
+
+      <div v-show="!isOverviewCollapsed" ref="overviewRef" class="overview-export-card">
 
         <div class="overview-range">總時間軸：{{ overviewRangeLabel }}</div>
 
@@ -999,25 +1188,65 @@ const selectedTask = computed(() => tasks.value.find((task) => task.id === selec
     </div>
 
     <div v-if="tasks.length > 0" class="gantt-layout">
-      <aside class="task-panel">
+      <div class="task-panel task-panel-top">
         <div class="summary-card">
           <div class="summary-title">工作摘要</div>
           <div class="summary-item">總數：{{ tasks.length }}</div>
           <div class="summary-item">貯體：{{ groupedTasks.length }}</div>
           <div class="summary-item">顯示中：{{ visibleTasks.length }}</div>
+
+          <div class="summary-subtitle">負責人任務分布</div>
+          <div v-if="assigneeTaskGroups.length === 0" class="summary-item">目前沒有已分派負責人的任務</div>
+          <details v-for="group in assigneeTaskGroups" :key="group.name" class="summary-details">
+            <summary>{{ group.name }}（{{ group.items.length }}）</summary>
+            <ul class="summary-task-list">
+              <li v-for="task in group.items" :key="task.id" class="summary-task-item" @click="selectedTaskId = task.id">
+                <span class="summary-task-name">{{ task.name }}</span>
+                <span class="summary-task-date">{{ formatDate(task.startDate) }}</span>
+              </li>
+            </ul>
+          </details>
+
+          <div class="summary-subtitle">未分派負責人（{{ unassignedTasks.length }}）</div>
+          <div v-if="unassignedTasks.length === 0" class="summary-item">無未分派任務</div>
+          <ul v-else class="summary-task-list summary-task-list-flat">
+            <li v-for="task in unassignedTasks" :key="task.id" class="summary-task-item" @click="selectedTaskId = task.id">
+              <span class="summary-task-name">{{ task.name }}</span>
+              <span class="summary-task-date">{{ formatDate(task.startDate) }}</span>
+            </li>
+          </ul>
         </div>
 
-        <div class="summary-card" v-if="selectedTask">
-          <div class="summary-title">目前選擇</div>
-          <div class="summary-item"><strong>{{ selectedTask.name }}</strong></div>
-          <div class="summary-item">狀態：{{ selectedTask.status || '-' }}</div>
-          <div class="summary-item">優先：{{ selectedTask.priority || '-' }}</div>
-          <div class="summary-item">起日：{{ formatDate(selectedTask.startDate) }}</div>
-          <div class="summary-item">迄日：{{ formatDate(selectedTask.dueDate) }}</div>
-          <div class="summary-item">指派：{{ selectedTask.assignee || '-' }}</div>
-          <div class="summary-item">貯體：{{ selectedTask.bucketName || '-' }}</div>
+        <div class="summary-card selected-task-card" v-if="selectedTask">
+          <div class="selected-task-header">
+            <div class="summary-title">目前選擇</div>
+            <div class="selected-task-name">{{ selectedTask.name }}</div>
+          </div>
+
+          <div class="selected-task-grid">
+            <div class="selected-kv"><span class="kv-label">狀態</span><span class="kv-value">{{ selectedTask.status || '-' }}</span></div>
+            <div class="selected-kv"><span class="kv-label">優先</span><span class="kv-value">{{ selectedTask.priority || '-' }}</span></div>
+            <div class="selected-kv"><span class="kv-label">起日</span><span class="kv-value">{{ formatDate(selectedTask.startDate) }}</span></div>
+            <div class="selected-kv"><span class="kv-label">迄日</span><span class="kv-value">{{ formatDate(selectedTask.dueDate) }}</span></div>
+            <div class="selected-kv"><span class="kv-label">指派</span><span class="kv-value">{{ selectedTask.assignee || '-' }}</span></div>
+            <div class="selected-kv"><span class="kv-label">貯體</span><span class="kv-value">{{ selectedTask.bucketName || '-' }}</span></div>
+          </div>
+
+          <details class="checklist-panel" :open="selectedTask.checklistItems.length > 0 && selectedTask.checklistItems.length <= 4">
+            <summary>
+              檢查清單（{{ selectedChecklistStats.completed }}/{{ selectedChecklistStats.total }}）
+            </summary>
+
+            <div v-if="selectedTask.checklistItems.length === 0" class="summary-item">此工作無檢查清單項目</div>
+            <ul v-else class="checklist-list compact">
+              <li v-for="item in selectedTask.checklistItems" :key="item.id" class="checklist-item">
+                <span class="check-icon">{{ item.completed ? '☑' : '☐' }}</span>
+                <span :class="{ 'checklist-done': item.completed }">{{ item.title }}</span>
+              </li>
+            </ul>
+          </details>
         </div>
-      </aside>
+      </div>
 
       <section ref="ganttCaptureRef" class="gantt-main">
         <div class="timeline-header" :style="{ width: `${timelineTotalWidth}px` }">
@@ -1221,6 +1450,34 @@ const selectedTask = computed(() => tasks.value.find((task) => task.id === selec
   color: #1e293b;
 }
 
+.overview-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.overview-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.overview-toggle-button {
+  border: 1px solid #d7deea;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: #ffffff;
+  color: #1e293b;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.overview-toggle-button:hover {
+  background: #f8fafc;
+}
+
 .overview-header {
   display: flex;
   justify-content: space-between;
@@ -1348,16 +1605,182 @@ const selectedTask = computed(() => tasks.value.find((task) => task.id === selec
 }
 
 .gantt-layout {
-  display: grid;
-  grid-template-columns: 300px 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  min-height: 520px;
+  min-height: 640px;
 }
 
 .task-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.task-panel-top {
+  align-items: stretch;
+}
+
+.summary-subtitle {
+  margin-top: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.summary-details {
+  margin-bottom: 6px;
+}
+
+.summary-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #334155;
+  user-select: none;
+}
+
+.summary-task-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid #e5ecf5;
+  border-radius: 8px;
+  background: #ffffff;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.summary-task-list-flat {
+  margin-top: 4px;
+}
+
+.summary-task-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid #eef2f7;
+  cursor: pointer;
+}
+
+.summary-task-item:last-child {
+  border-bottom: none;
+}
+
+.summary-task-item:hover {
+  background: #f8fbff;
+}
+
+.summary-task-name {
+  min-width: 0;
+  font-size: 12px;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.summary-task-date {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.selected-task-card {
+  padding: 10px 12px;
+}
+
+.selected-task-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.selected-task-header .summary-title {
+  margin-bottom: 0;
+}
+
+.selected-task-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.2;
+}
+
+.selected-task-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.selected-kv {
+  border: 1px solid #e5ecf5;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 6px 8px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kv-label {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.kv-value {
+  font-size: 12px;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.checklist-panel {
+  margin-top: 8px;
+}
+
+.checklist-panel summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #475569;
+  user-select: none;
+}
+
+.checklist-list.compact {
+  margin-top: 6px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.checklist-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.check-icon {
+  color: #334155;
+}
+
+.checklist-done {
+  color: #64748b;
+  text-decoration: line-through;
 }
 
 .summary-card {
@@ -1383,6 +1806,7 @@ const selectedTask = computed(() => tasks.value.find((task) => task.id === selec
   border-radius: 10px;
   overflow: auto;
   background: #fff;
+  min-height: 520px;
 }
 
 .timeline-header {
@@ -1562,7 +1986,15 @@ const selectedTask = computed(() => tasks.value.find((task) => task.id === selec
   }
 
   .gantt-layout {
+    min-height: 520px;
+  }
+
+  .task-panel {
     grid-template-columns: 1fr;
+  }
+
+  .selected-task-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .task-label {
