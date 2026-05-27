@@ -6,6 +6,8 @@
 
 這是一個以 Vue 3 + TypeScript + Vite 建置的工具型 SPA，整合常用的開發與資料處理小工具。
 
+目前版本：`4.3.0`
+
 ---
 
 ## ✨ 專案特色
@@ -17,21 +19,26 @@
 - 支援本地開發、正式打包與靜態站預覽。
 - HTML 預覽器內建 CodeMirror 編輯器，提供行號與 HTML syntax highlighting，支援全屏預覽。
 - Markdown 預覽器支援 HTML 渲染結果全屏顯示。
-- CSV/XLSX 轉 JSON 工具，支援格式化、壓縮與複製結果，格式不符合時顯示錯誤。
+- CSV/XLSX Parser 支援檔案解析、關鍵字篩選、單筆編輯刪除與 JSON/CSV/TXT 匯出。
+- Planner Gantt 支援匯入 Microsoft Planner XLSX，產生可互動甘特圖與統計摘要。
 - 各工具可手動儲存「此次轉換 raw data」，並集中在存檔歷史檢視與刪除。
 
 ---
 
 ## 📁 目錄結構（重要）
 
-本倉庫目前為單層目錄，前端專案檔案就在根目錄：
+本倉庫為單層前端專案，以下為精簡後的重要結構：
 
 ```text
 MyTools/
+├─ .github/workflows/
+├─ .husky/
 ├─ README.md
 ├─ package.json
 ├─ src/
 ├─ public/
+├─ localfile/
+├─ material/
 └─ start_server.bat
 ```
 
@@ -64,6 +71,8 @@ npm run dev      # 啟動開發伺服器
 npm run build    # TypeScript 檢查 + 生產打包
 npm run preview  # 預覽打包結果
 npm run lint     # ESLint 檢查
+npm run prepare  # 安裝/更新 husky hooks
+npm run lint:commit  # 檢查最近一段 commit 訊息格式
 ```
 
 ---
@@ -184,6 +193,7 @@ npm version patch --no-git-tag-version
 | XSLT 比較器 | `/tools/xslt-diff` | 上傳或貼上兩份 XSLT / XML，逐行比較並以左右分割視圖高亮差異、儲存此次轉換 |
 | SQL 比較器 | `/tools/sql-compare` | 上傳或貼上兩份 SQL，自訂 Regex 比較條件，列出左右缺少清單並可儲存結果 |
 | SQL Practice | `/tools/sql-practice` | 預設家具訂單假資料、線上設定 master/detail schema、下載 JSON 範本、匯入資料並在前端執行 SQL 查詢 |
+| Planner Gantt | `/tools/planner-gantt` | 匯入 Microsoft Planner XLSX，依 bucket 與日期產生可互動甘特圖，支援統計摘要與圖片匯出 |
 | 存檔歷史 | `/history` | 顯示所有已儲存 raw data（input/output）、可單筆刪除 |
 
 ---
@@ -192,7 +202,7 @@ npm version patch --no-git-tag-version
 
 ### 使用流程
 
-1. 在任一工具完成一次轉換（例如 Base64 encode、JSON format、Markdown render 等）
+1. 在支援「儲存此次轉換」的工具完成一次轉換（例如 Base64 encode、JSON format、Markdown render 等）
 2. 點擊該工具中的「儲存此次轉換」
 3. 前往 `/history` 查看歷史紀錄
 4. 可在歷史頁對單筆紀錄按「刪除」
