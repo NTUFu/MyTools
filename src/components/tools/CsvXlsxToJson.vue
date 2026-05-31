@@ -19,13 +19,17 @@ const txtDelimiter = ref<'tab' | 'comma' | 'pipe' | 'semicolon'>('tab')
 
 const totalRows = computed(() => parsedRows.value.length)
 const totalColumns = computed(() => parsedHeaders.value.length)
+const trimmedSearchQuery = computed(() => searchQuery.value.trim())
+const normalizedSearchQuery = computed(() => trimmedSearchQuery.value.toLowerCase())
+
+const rowViewModels = computed(() => parsedRows.value.map((row, idx) => ({ originalIndex: idx + 1, row })))
 
 const filteredRows = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return parsedRows.value.map((row, idx) => ({ originalIndex: idx + 1, row }))
-  return parsedRows.value
-    .map((row, idx) => ({ originalIndex: idx + 1, row }))
-    .filter(({ row }) => row.some((cell) => cell.toLowerCase().includes(q)))
+  if (!normalizedSearchQuery.value) {
+    return rowViewModels.value
+  }
+
+  return rowViewModels.value.filter(({ row }) => row.some((cell) => cell.toLowerCase().includes(normalizedSearchQuery.value)))
 })
 
 const filteredCount = computed(() => filteredRows.value.length)
@@ -96,6 +100,8 @@ const handleSearchChange = () => {
   currentPage.value = 1
 }
 
+const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 const escapeHtml = (text: string): string =>
   text
     .replace(/&/g, '&amp;')
@@ -103,15 +109,22 @@ const escapeHtml = (text: string): string =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
 
+const escapedSearchRegex = computed(() => {
+  if (!trimmedSearchQuery.value) {
+    return null
+  }
+
+  const escapedQuery = escapeRegex(escapeHtml(trimmedSearchQuery.value))
+  return new RegExp(escapedQuery, 'gi')
+})
+
 const highlightMatch = (value: string): string => {
-  const q = searchQuery.value.trim()
-  if (!q) return escapeHtml(value)
+  if (!escapedSearchRegex.value) {
+    return escapeHtml(value)
+  }
+
   const escapedHtml = escapeHtml(value)
-  const escapedQuery = escapeHtml(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return escapedHtml.replace(
-    new RegExp(escapedQuery, 'gi'),
-    (m) => `<mark style="background:#fff176;padding:0">${m}</mark>`,
-  )
+  return escapedHtml.replace(escapedSearchRegex.value, (m) => `<mark style="background:#fff176;padding:0">${m}</mark>`)
 }
 
 const resetAllState = () => {
@@ -432,7 +445,7 @@ const cancelDelete = () => {
       <span>總欄位：{{ totalColumns }}</span>
       <span>總資料列：{{ totalRows }}</span>
       <span
-        v-if="searchQuery.trim()"
+        v-if="trimmedSearchQuery"
         style="background: #fff9c4; border: 1px solid #f9a825; border-radius: 4px; padding: 2px 8px; color: #e65100; font-size: 12px"
       >搜尋到：{{ filteredCount }} 筆</span>
       <span>目前頁次：{{ currentPage }} / {{ totalPages }}</span>
@@ -514,7 +527,7 @@ const cancelDelete = () => {
         <tbody>
           <tr
             v-for="(item, rowIndex) in pagedRows"
-            :key="`row-${rowIndex}`"
+            :key="`row-${item.originalIndex}`"
             :style="editingRowIndex === item.originalIndex - 1 ? 'background:#fffde7' : ''"
           >
             <td

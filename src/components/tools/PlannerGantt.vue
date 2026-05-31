@@ -63,6 +63,16 @@ interface TaskContributionStat {
   contributionPct: number
 }
 
+interface TaskDerivedMeta {
+  start: Date
+  end: Date
+  finish: Date
+  isCompleted: boolean
+  checklistTotal: number
+  checklistCompleted: number
+  progressPct: number
+}
+
 const isParsing = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
@@ -82,6 +92,15 @@ const TASK_LABEL_WIDTH = 270
 const OVERVIEW_BUCKET_COL_WIDTH = 180
 const OVERVIEW_DAYS_COL_WIDTH = 80
 const OVERVIEW_DATE_COL_WIDTH = 120
+const DATE_FORMATTER = new Intl.DateTimeFormat('zh-TW', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+const PRIORITY_URGENT_KEYWORDS = ['緊急', 'urgent', 'critical', 'high', '高', 'p0', 'p1']
+const PRIORITY_IMPORTANT_KEYWORDS = ['重要', 'important']
+const PRIORITY_MEDIUM_KEYWORDS = ['中等', 'medium', 'normal', '一般', '中']
+const PRIORITY_LOW_KEYWORDS = ['低', 'low']
 
 const activeDrag = ref<DragState | null>(null)
 const selectedTaskId = ref('')
@@ -116,11 +135,7 @@ const formatDate = (value: Date | null) => {
     return '-'
   }
 
-  return new Intl.DateTimeFormat('zh-TW', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(value)
+  return DATE_FORMATTER.format(value)
 }
 
 const formatDateIso = (value: Date | null) => {
@@ -286,7 +301,7 @@ const parseDepartmentTagsFromRow = (row: unknown[], headerMap: Map<string, numbe
 
 const normalizeStatus = (status: string) => status.replace(/\s+/g, '')
 
-const getTaskStart = (task: PlannerTask): Date => {
+const getRawTaskStart = (task: PlannerTask): Date => {
   if (task.startDate) {
     return task.startDate
   }
@@ -306,7 +321,7 @@ const getTaskStart = (task: PlannerTask): Date => {
   return safeDate(now)
 }
 
-const getTaskEnd = (task: PlannerTask): Date => {
+const getRawTaskEnd = (task: PlannerTask): Date => {
   if (task.completedDate) {
     return task.completedDate
   }
@@ -326,22 +341,72 @@ const getTaskEnd = (task: PlannerTask): Date => {
   return safeDate(now)
 }
 
-const getTaskFinish = (task: PlannerTask): Date => {
-  if (task.completedDate) {
-    return task.completedDate
+const buildTaskDerivedMeta = (task: PlannerTask): TaskDerivedMeta => {
+  const start = getRawTaskStart(task)
+  const endCandidate = getRawTaskEnd(task)
+  const end = dayDiff(start, endCandidate) >= 0 ? endCandidate : start
+  const finish = task.completedDate ?? end
+  const normalizedStatus = normalizeStatus(task.status)
+  const isCompleted = normalizedStatus.includes('完成') || task.completedDate !== null
+
+  let checklistCompleted = 0
+  for (const item of task.checklistItems) {
+    if (item.completed) {
+      checklistCompleted += 1
+    }
   }
 
-  return getTaskEnd(task)
+  const checklistTotal = task.checklistItems.length
+  let progressPct = 0
+
+  if (isCompleted) {
+    progressPct = 100
+  } else if (checklistTotal > 0) {
+    progressPct = Math.round((checklistCompleted / checklistTotal) * 100)
+  } else if (normalizedStatus.includes('進行中')) {
+    progressPct = 50
+  }
+
+  return {
+    start,
+    end,
+    finish,
+    isCompleted,
+    checklistTotal,
+    checklistCompleted,
+    progressPct,
+  }
+}
+
+const taskDerivedMetaMap = computed(() => {
+  const map = new Map<PlannerTask, TaskDerivedMeta>()
+
+  for (const task of tasks.value) {
+    map.set(task, buildTaskDerivedMeta(task))
+  }
+
+  return map
+})
+
+const getTaskDerivedMeta = (task: PlannerTask) => {
+  return taskDerivedMetaMap.value.get(task) ?? buildTaskDerivedMeta(task)
+}
+
+const getTaskStart = (task: PlannerTask): Date => {
+  return getTaskDerivedMeta(task).start
+}
+
+const getTaskEnd = (task: PlannerTask): Date => {
+  return getTaskDerivedMeta(task).end
+}
+
+const getTaskFinish = (task: PlannerTask): Date => {
+  return getTaskDerivedMeta(task).finish
 }
 
 const ensureTaskDates = (task: PlannerTask) => {
-  const start = getTaskStart(task)
-  const end = getTaskEnd(task)
-  if (dayDiff(start, end) >= 0) {
-    return { start, end }
-  }
-
-  return { start, end: start }
+  const meta = getTaskDerivedMeta(task)
+  return { start: meta.start, end: meta.end }
 }
 
 const toHeaderIndex = (headerRow: unknown[]) => {
@@ -854,27 +919,20 @@ const timelineTotalWidth = computed(() => TASK_LABEL_WIDTH + chartWidth.value)
 const timelineRenderWidth = computed(() => `max(${timelineTotalWidth.value}px, 100%)`)
 
 const isTaskCompleted = (task: PlannerTask) => {
-  const normalized = normalizeStatus(task.status)
-  return normalized.includes('完成') || task.completedDate !== null
+  return getTaskDerivedMeta(task).isCompleted
+}
+
+const getChecklistCompletionStats = (task: PlannerTask) => {
+  const meta = getTaskDerivedMeta(task)
+
+  return {
+    total: meta.checklistTotal,
+    completed: meta.checklistCompleted,
+  }
 }
 
 const getTaskProgressPct = (task: PlannerTask) => {
-  if (isTaskCompleted(task)) {
-    return 100
-  }
-
-  const total = task.checklistItems.length
-  if (total > 0) {
-    const completed = task.checklistItems.filter((item) => item.completed).length
-    return Math.round((completed / total) * 100)
-  }
-
-  const normalized = normalizeStatus(task.status)
-  if (normalized.includes('進行中')) {
-    return 50
-  }
-
-  return 0
+  return getTaskDerivedMeta(task).progressPct
 }
 
 const dashboardMetrics = computed(() => {
@@ -884,6 +942,7 @@ const dashboardMetrics = computed(() => {
   let completed = 0
   let incomplete = 0
   let dueSoon = 0
+  let overdue = 0
 
   for (const task of tasks.value) {
     const completedFlag = isTaskCompleted(task)
@@ -891,8 +950,12 @@ const dashboardMetrics = computed(() => {
       completed += 1
     } else {
       incomplete += 1
-      if (task.dueDate && task.dueDate >= today && task.dueDate <= soonDate) {
-        dueSoon += 1
+      if (task.dueDate) {
+        if (task.dueDate < today) {
+          overdue += 1
+        } else if (task.dueDate >= today && task.dueDate <= soonDate) {
+          dueSoon += 1
+        }
       }
     }
   }
@@ -901,6 +964,7 @@ const dashboardMetrics = computed(() => {
     completed,
     incomplete,
     dueSoon,
+    overdue,
   }
 })
 
@@ -1207,11 +1271,11 @@ const exportGanttWorkbook = () => {
   try {
     const workbook = XLSX.utils.book_new()
     const visibleTaskIdSet = new Set(filteredTasks.value.map((task) => task.id))
+    const exportTimeIso = new Date().toISOString()
     const rows = tasks.value.map((task, index) => {
       const { start, end } = ensureTaskDates(task)
       const finish = getTaskFinish(task)
-      const checklistTotal = task.checklistItems.length
-      const checklistCompleted = task.checklistItems.filter((item) => item.completed).length
+      const { total: checklistTotal, completed: checklistCompleted } = getChecklistCompletionStats(task)
 
       return {
         工作名稱: task.name,
@@ -1236,7 +1300,7 @@ const exportGanttWorkbook = () => {
         檢查清單項目: task.checklistItems.map((item) => `${item.completed ? '☑' : '☐'} ${item.title}`).join(' | '),
         備註: task.notes,
         目前篩選是否顯示: visibleTaskIdSet.has(task.id) ? '是' : '否',
-        匯出時間UTC: new Date().toISOString(),
+        匯出時間UTC: exportTimeIso,
         來源檔名: sourceFileName.value || '',
       }
     })
@@ -1378,6 +1442,39 @@ const barClass = (task: PlannerTask) => {
   return 'bar-todo'
 }
 
+const normalizePriorityValue = (value: string) => normalizeText(value).toLowerCase().replace(/\s+/g, '')
+
+const containsAnyKeyword = (source: string, keywords: string[]) => keywords.some((keyword) => source.includes(keyword))
+
+const hasPriority = (value: string) => normalizePriorityValue(value) !== ''
+
+const getPriorityLevel = (value: string) => {
+  const normalized = normalizePriorityValue(value)
+  if (!normalized) {
+    return 'unknown'
+  }
+
+  if (containsAnyKeyword(normalized, PRIORITY_URGENT_KEYWORDS)) {
+    return 'urgent'
+  }
+
+  if (containsAnyKeyword(normalized, PRIORITY_IMPORTANT_KEYWORDS)) {
+    return 'important'
+  }
+
+  if (containsAnyKeyword(normalized, PRIORITY_MEDIUM_KEYWORDS)) {
+    return 'medium'
+  }
+
+  if (containsAnyKeyword(normalized, PRIORITY_LOW_KEYWORDS)) {
+    return 'low'
+  }
+
+  return 'unknown'
+}
+
+const priorityClass = (value: string) => `priority-${getPriorityLevel(value)}`
+
 const toggleBucket = (bucketName: string) => {
   collapsedBuckets.value[bucketName] = !collapsedBuckets.value[bucketName]
 }
@@ -1505,14 +1602,84 @@ const unassignedTasks = computed(() => {
     .sort((a, b) => getTaskStart(a).getTime() - getTaskStart(b).getTime())
 })
 
+const assigneeDistributionRows = computed(() => {
+  const map = new Map<string, number>()
+
+  for (const task of tasks.value) {
+    const key = isUnassignedAssignee(task.assignee) ? '未分派' : normalizeText(task.assignee)
+    map.set(key, (map.get(key) ?? 0) + 1)
+  }
+
+  return Array.from(map.entries())
+    .map(([name, count]) => ({ name, count, pct: tasks.value.length > 0 ? Math.round((count / tasks.value.length) * 1000) / 10 : 0 }))
+    .sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count
+      }
+
+      return a.name.localeCompare(b.name, 'zh-Hant')
+    })
+})
+
+const bucketTaskDistributionRows = computed(() => {
+  const map = new Map<string, number>()
+
+  for (const task of tasks.value) {
+    const key = task.bucketName || '未分類'
+    map.set(key, (map.get(key) ?? 0) + 1)
+  }
+
+  return Array.from(map.entries())
+    .map(([name, count]) => ({ name, count, pct: tasks.value.length > 0 ? Math.round((count / tasks.value.length) * 1000) / 10 : 0 }))
+    .sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count
+      }
+
+      return a.name.localeCompare(b.name, 'zh-Hant')
+    })
+})
+
+const distributionBarWidth = (count: number, maxCount: number) => {
+  if (count <= 0 || maxCount <= 0) {
+    return '0%'
+  }
+
+  return `${Math.max(4, (count / maxCount) * 100)}%`
+}
+
+const isMissingText = (value: string) => normalizeText(value) === ''
+
+const isMissingDate = (value: Date | null) => value === null
+
+const isMissingDepartments = (departments: string[]) => departments.length === 0
+
+const isChecklistIncomplete = (task: PlannerTask) => {
+  const { total, completed } = getChecklistCompletionStats(task)
+  if (total === 0) {
+    return false
+  }
+
+  return completed < total
+}
+
 const selectedChecklistStats = computed(() => {
   if (!selectedTask.value) {
     return { completed: 0, total: 0 }
   }
 
-  const total = selectedTask.value.checklistItems.length
-  const completed = selectedTask.value.checklistItems.filter((item) => item.completed).length
-  return { completed, total }
+  return getChecklistCompletionStats(selectedTask.value)
+})
+
+const selectedChecklistRateLabel = computed(() => {
+  const total = selectedChecklistStats.value.total
+  const completed = selectedChecklistStats.value.completed
+
+  if (total === 0) {
+    return '0/0 (0%)'
+  }
+
+  return `${completed}/${total} (${Math.round((completed / total) * 100)}%)`
 })
 
 const selectedTaskDurationDays = computed(() => {
@@ -1564,6 +1731,13 @@ const toggleStats = () => {
       <div class="dashboard-card dashboard-card-pending">
         <div class="dashboard-label">未完成</div>
         <div class="dashboard-value">{{ dashboardMetrics.incomplete }}</div>
+      </div>
+      <div
+        class="dashboard-card"
+        :class="dashboardMetrics.overdue === 0 ? 'dashboard-card-overdue-zero' : 'dashboard-card-overdue'"
+      >
+        <div class="dashboard-label">已逾期</div>
+        <div class="dashboard-value">{{ dashboardMetrics.overdue }}</div>
       </div>
       <div class="dashboard-card dashboard-card-soon">
         <div class="dashboard-label">即將到期（7 天內）</div>
@@ -1633,6 +1807,49 @@ const toggleStats = () => {
                 <div class="stats-bar-fill stats-bar-fill-task" :style="{ width: contributionBarWidth(item.contributionPct) }"></div>
               </div>
               <div class="stats-row-meta">{{ item.bucketName }} | 任務進度 {{ item.progressPct }}%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-show="!isStatsCollapsed" class="stats-chart-grid">
+        <div class="stats-chart-card">
+          <div class="stats-chart-title">負責人任務分布</div>
+          <div class="stats-chart-subtitle">含未分派任務</div>
+          <div v-if="assigneeDistributionRows.length === 0" class="stats-empty">目前無可用資料</div>
+          <div v-else class="stats-rows stats-rows-scroll">
+            <div v-for="item in assigneeDistributionRows" :key="item.name" class="stats-row">
+              <div class="stats-row-head">
+                <span class="stats-row-name">{{ item.name }}</span>
+                <span class="stats-row-value">{{ item.count }}</span>
+              </div>
+              <div class="stats-bar-track">
+                <div
+                  class="stats-bar-fill stats-bar-fill-distribution"
+                  :style="{ width: distributionBarWidth(item.count, assigneeDistributionRows[0]?.count ?? 0) }"
+                ></div>
+              </div>
+              <div class="stats-row-meta">佔比 {{ item.pct }}%</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="stats-chart-card">
+          <div class="stats-chart-title">貯體任務分布</div>
+          <div v-if="bucketTaskDistributionRows.length === 0" class="stats-empty">目前無可用資料</div>
+          <div v-else class="stats-rows stats-rows-scroll">
+            <div v-for="item in bucketTaskDistributionRows" :key="item.name" class="stats-row">
+              <div class="stats-row-head">
+                <span class="stats-row-name">{{ item.name }}</span>
+                <span class="stats-row-value">{{ item.count }}</span>
+              </div>
+              <div class="stats-bar-track">
+                <div
+                  class="stats-bar-fill stats-bar-fill-distribution"
+                  :style="{ width: distributionBarWidth(item.count, bucketTaskDistributionRows[0]?.count ?? 0) }"
+                ></div>
+              </div>
+              <div class="stats-row-meta">佔比 {{ item.pct }}%</div>
             </div>
           </div>
         </div>
@@ -1799,14 +2016,18 @@ const toggleStats = () => {
           </div>
 
           <div class="selected-task-grid">
-            <div class="selected-kv"><span class="kv-label">狀態</span><span class="kv-value">{{ selectedTask.status || '-' }}</span></div>
-            <div class="selected-kv"><span class="kv-label">優先</span><span class="kv-value">{{ selectedTask.priority || '-' }}</span></div>
-            <div class="selected-kv"><span class="kv-label">起日</span><span class="kv-value">{{ formatDate(selectedTask.startDate) }}</span></div>
-            <div class="selected-kv"><span class="kv-label">迄日</span><span class="kv-value">{{ formatDate(selectedTask.dueDate) }}</span></div>
+            <div class="selected-kv" :class="{ 'selected-kv-missing': isMissingText(selectedTask.status) }"><span class="kv-label">狀態</span><span class="kv-value" :class="{ 'kv-value-missing': isMissingText(selectedTask.status) }">{{ selectedTask.status || '-' }}</span></div>
+            <div class="selected-kv" :class="{ 'selected-kv-missing': isMissingText(selectedTask.priority) }"><span class="kv-label">優先</span><span class="kv-value kv-priority-pill" :class="[priorityClass(selectedTask.priority), { 'kv-value-missing': isMissingText(selectedTask.priority) }]">{{ selectedTask.priority || '-' }}</span></div>
+            <div class="selected-kv" :class="{ 'selected-kv-missing': isMissingDate(selectedTask.startDate) }"><span class="kv-label">起日</span><span class="kv-value" :class="{ 'kv-value-missing': isMissingDate(selectedTask.startDate) }">{{ formatDate(selectedTask.startDate) }}</span></div>
+            <div class="selected-kv" :class="{ 'selected-kv-missing': isMissingDate(selectedTask.dueDate) }"><span class="kv-label">迄日</span><span class="kv-value" :class="{ 'kv-value-missing': isMissingDate(selectedTask.dueDate) }">{{ formatDate(selectedTask.dueDate) }}</span></div>
+            <div class="selected-kv" :class="{ 'selected-kv-missing': isMissingDate(selectedTask.createdDate) }"><span class="kv-label">建立日</span><span class="kv-value" :class="{ 'kv-value-missing': isMissingDate(selectedTask.createdDate) }">{{ formatDate(selectedTask.createdDate) }}</span></div>
+            <div class="selected-kv" :class="{ 'selected-kv-missing': isMissingDate(selectedTask.completedDate) }"><span class="kv-label">完成日</span><span class="kv-value" :class="{ 'kv-value-missing': isMissingDate(selectedTask.completedDate) }">{{ formatDate(selectedTask.completedDate) }}</span></div>
             <div class="selected-kv"><span class="kv-label">天數</span><span class="kv-value">{{ selectedTaskDurationDays }}</span></div>
-            <div class="selected-kv"><span class="kv-label">指派</span><span class="kv-value">{{ selectedTask.assignee || '-' }}</span></div>
-            <div class="selected-kv"><span class="kv-label">貯體</span><span class="kv-value">{{ selectedTask.bucketName || '-' }}</span></div>
-            <div class="selected-kv"><span class="kv-label">部門標籤</span><span class="kv-value">{{ selectedTask.departments.length > 0 ? selectedTask.departments.join('、') : '-' }}</span></div>
+            <div class="selected-kv" :class="{ 'selected-kv-missing': isMissingText(selectedTask.assignee) }"><span class="kv-label">指派</span><span class="kv-value" :class="{ 'kv-value-missing': isMissingText(selectedTask.assignee) }">{{ selectedTask.assignee || '-' }}</span></div>
+            <div class="selected-kv" :class="{ 'selected-kv-missing': isMissingText(selectedTask.bucketName) }"><span class="kv-label">貯體</span><span class="kv-value" :class="{ 'kv-value-missing': isMissingText(selectedTask.bucketName) }">{{ selectedTask.bucketName || '-' }}</span></div>
+            <div class="selected-kv" :class="{ 'selected-kv-missing': isMissingDepartments(selectedTask.departments) }"><span class="kv-label">部門標籤</span><span class="kv-value" :class="{ 'kv-value-missing': isMissingDepartments(selectedTask.departments) }">{{ selectedTask.departments.length > 0 ? selectedTask.departments.join('、') : '-' }}</span></div>
+            <div class="selected-kv" :class="{ 'selected-kv-missing': isChecklistIncomplete(selectedTask) }"><span class="kv-label">檢查清單完成率</span><span class="kv-value" :class="{ 'kv-value-missing': isChecklistIncomplete(selectedTask) }">{{ selectedChecklistRateLabel }}</span></div>
+            <div class="selected-kv selected-kv-wide"><span class="kv-label">備註</span><span class="kv-value kv-value-notes">{{ selectedTask.notes || '-' }}</span></div>
           </div>
 
           <details class="checklist-panel" :open="selectedTask.checklistItems.length > 0 && selectedTask.checklistItems.length <= 4">
@@ -1871,7 +2092,12 @@ const toggleStats = () => {
                 @click="selectedTaskId = task.id"
               >
                 <div class="task-label">
-                  <div class="task-name">{{ task.name }}</div>
+                  <div class="task-name-row">
+                    <div class="task-name">{{ task.name }}</div>
+                    <span v-if="hasPriority(task.priority)" class="task-priority-pill" :class="priorityClass(task.priority)">
+                      {{ task.priority }}
+                    </span>
+                  </div>
                   <div class="task-meta">
                     {{ task.status || '未設定狀態' }} | {{ formatDate(task.startDate) }} ~
                     {{ formatDate(task.dueDate) }}
@@ -2070,7 +2296,7 @@ const toggleStats = () => {
 
 .dashboard-cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -2094,6 +2320,16 @@ const toggleStats = () => {
 .dashboard-card-soon {
   background: linear-gradient(135deg, #fff7ed, #ffedd5);
   border-color: #fdba74;
+}
+
+.dashboard-card-overdue {
+  background: linear-gradient(135deg, #fef2f2, #fee2e2);
+  border-color: #fca5a5;
+}
+
+.dashboard-card-overdue-zero {
+  background: linear-gradient(135deg, #f8fafc, #e2e8f0);
+  border-color: #cbd5e1;
 }
 
 .dashboard-label {
@@ -2312,6 +2548,10 @@ const toggleStats = () => {
 
 .stats-bar-fill-task {
   background: linear-gradient(90deg, #f59e0b, #d97706);
+}
+
+.stats-bar-fill-distribution {
+  background: linear-gradient(90deg, #8b5cf6, #6366f1);
 }
 
 .overview-tools {
@@ -2614,6 +2854,15 @@ const toggleStats = () => {
   min-width: 0;
 }
 
+.selected-kv-missing {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.selected-kv-wide {
+  grid-column: span 3;
+}
+
 .kv-label {
   font-size: 11px;
   color: #64748b;
@@ -2625,6 +2874,16 @@ const toggleStats = () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.kv-value-missing {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.kv-value-notes {
+  white-space: normal;
+  line-height: 1.45;
 }
 
 .checklist-panel {
@@ -2793,6 +3052,65 @@ const toggleStats = () => {
   text-overflow: ellipsis;
 }
 
+.task-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.task-name-row .task-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-priority-pill,
+.kv-priority-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 8px;
+  font-weight: 700;
+}
+
+.kv-priority-pill {
+  width: fit-content;
+}
+
+.priority-urgent {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.priority-important {
+  background: #ffedd5;
+  color: #9a3412;
+  border-color: #fdba74;
+}
+
+.priority-medium {
+  background: #fef9c3;
+  color: #854d0e;
+  border-color: #fde68a;
+}
+
+.priority-low {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #86efac;
+}
+
+.priority-unknown {
+  background: #e2e8f0;
+  color: #334155;
+  border-color: #cbd5e1;
+}
+
 .task-meta {
   font-size: 11px;
   color: #64748b;
@@ -2886,7 +3204,7 @@ const toggleStats = () => {
 
 @media (max-width: 960px) {
   .dashboard-cards {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .stats-kpi-grid,
@@ -2912,6 +3230,10 @@ const toggleStats = () => {
 
   .selected-task-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .selected-kv-wide {
+    grid-column: span 2;
   }
 
   .task-label {

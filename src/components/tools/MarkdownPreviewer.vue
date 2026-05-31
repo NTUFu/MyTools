@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { marked } from 'marked'
 import { useHistoryStore } from '../../stores/history'
 
@@ -9,6 +9,26 @@ const markdownInput = ref('')
 const saveStatus = ref<'none' | 'saved'>('none')
 const errorMessage = ref('')
 const isFullscreen = ref(false)
+
+let saveStatusTimer: ReturnType<typeof setTimeout> | null = null
+
+const markSavedTransient = () => {
+  saveStatus.value = 'saved'
+
+  if (saveStatusTimer) {
+    clearTimeout(saveStatusTimer)
+  }
+
+  saveStatusTimer = setTimeout(() => {
+    saveStatus.value = 'none'
+    saveStatusTimer = null
+  }, 2000)
+}
+
+const handleInputChange = () => {
+  saveStatus.value = 'none'
+  errorMessage.value = ''
+}
 
 const toggleFullscreen = () => {
   isFullscreen.value = !isFullscreen.value
@@ -37,11 +57,15 @@ const handleSaveCurrent = () => {
     output: htmlOutput.value,
   })
 
-  saveStatus.value = 'saved'
-  setTimeout(() => {
-    saveStatus.value = 'none'
-  }, 2000)
+  markSavedTransient()
 }
+
+onBeforeUnmount(() => {
+  if (saveStatusTimer) {
+    clearTimeout(saveStatusTimer)
+    saveStatusTimer = null
+  }
+})
 </script>
 
 <template>
@@ -77,7 +101,7 @@ const handleSaveCurrent = () => {
           rows="15"
           :placeholder="placeholderText"
           style="width: 100%; padding: 10px; box-sizing: border-box; font-family: Consolas, monospace; font-size: 14px; flex-grow: 1; min-height: 300px; border-radius: 5px; border: 1px solid #ccc"
-          @input="saveStatus = 'none'; errorMessage = ''"
+          @input="handleInputChange"
         />
       </div>
 

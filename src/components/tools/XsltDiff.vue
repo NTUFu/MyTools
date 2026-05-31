@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, type CSSProperties } from 'vue'
+import { computed, onBeforeUnmount, ref, type CSSProperties } from 'vue'
 import { useHistoryStore } from '../../stores/history'
 
 type CellType = 'equal' | 'delete' | 'insert' | 'empty'
@@ -49,6 +49,7 @@ const leftDiffPane = ref<HTMLDivElement | null>(null)
 const rightDiffPane = ref<HTMLDivElement | null>(null)
 
 let isSyncingDiffPaneScroll = false
+let saveStatusTimer: ReturnType<typeof setTimeout> | null = null
 
 const editorTextareaStyle: CSSProperties = {
   width: '100%',
@@ -105,6 +106,48 @@ const toDiffLines = (content: string): DiffLine[] =>
     original: line,
     normalized: normalizeLine(line),
   }))
+
+const createDiffStats = (lines: SideBySideLine[] | null) => {
+  if (!lines) {
+    return null
+  }
+
+  let deleted = 0
+  let inserted = 0
+  let equal = 0
+
+  for (const line of lines) {
+    if (line.leftType === 'delete') {
+      deleted += 1
+    }
+    if (line.rightType === 'insert') {
+      inserted += 1
+    }
+    if (line.leftType === 'equal') {
+      equal += 1
+    }
+  }
+
+  return {
+    deleted,
+    inserted,
+    equal,
+    hasDiff: deleted > 0 || inserted > 0,
+  }
+}
+
+const markSavedTransient = () => {
+  saveStatus.value = 'saved'
+
+  if (saveStatusTimer) {
+    clearTimeout(saveStatusTimer)
+  }
+
+  saveStatusTimer = setTimeout(() => {
+    saveStatus.value = 'none'
+    saveStatusTimer = null
+  }, 2000)
+}
 
 const handleFileUpload = (side: 'left' | 'right', event: Event) => {
   const input = event.target as HTMLInputElement
@@ -267,11 +310,12 @@ const handleCompare = () => {
   }
 
   const flat = computeLineDiff(leftLines, rightLines)
-  diffResult.value = buildSideBySide(flat)
-
-  const deleted = diffResult.value.filter((line) => line.leftType === 'delete').length
-  const inserted = diffResult.value.filter((line) => line.rightType === 'insert').length
-  const equal = diffResult.value.filter((line) => line.leftType === 'equal').length
+  const sideBySide = buildSideBySide(flat)
+  diffResult.value = sideBySide
+  const stats = createDiffStats(sideBySide)
+  if (!stats) {
+    return
+  }
 
   lastComparison.value = {
     leftInput: leftContent.value,
@@ -280,9 +324,9 @@ const handleCompare = () => {
     rightFileName: rightFileName.value || null,
     ignoreWhitespace: ignoreWhitespace.value,
     ignoreIndentation: ignoreIndentation.value,
-    deleted,
-    inserted,
-    equal,
+    deleted: stats.deleted,
+    inserted: stats.inserted,
+    equal: stats.equal,
   }
 }
 
@@ -333,10 +377,7 @@ const handleSaveCurrent = () => {
     },
   })
 
-  saveStatus.value = 'saved'
-  setTimeout(() => {
-    saveStatus.value = 'none'
-  }, 2000)
+  markSavedTransient()
 }
 
 const handleDiffPaneScroll = (side: 'left' | 'right', event: Event) => {
@@ -360,11 +401,14 @@ const handleDiffPaneScroll = (side: 'left' | 'right', event: Event) => {
 }
 
 const diffStats = computed(() => {
-  if (!diffResult.value) return null
-  const deleted = diffResult.value.filter((l) => l.leftType === 'delete').length
-  const inserted = diffResult.value.filter((l) => l.rightType === 'insert').length
-  const equal = diffResult.value.filter((l) => l.leftType === 'equal').length
-  return { deleted, inserted, equal, hasDiff: deleted > 0 || inserted > 0 }
+  return createDiffStats(diffResult.value)
+})
+
+onBeforeUnmount(() => {
+  if (saveStatusTimer) {
+    clearTimeout(saveStatusTimer)
+    saveStatusTimer = null
+  }
 })
 
 const cellBg = (type: CellType): string => {

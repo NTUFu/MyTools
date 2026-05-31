@@ -8,6 +8,12 @@
 
 目前版本：`4.3.0`
 
+## 🆕 近期更新（4.3.0）
+
+- Planner Gantt 新增更完整的檢視資訊：已逾期 / 即將到期統計、優先順序標示（緊急/重要/中/低）、人員與 bucket 分布摘要。
+- Planner Gantt 的「已選擇任務」資訊卡強化缺漏提示規則，快速辨識未填欄位與待完成檢查清單。
+- 多個工具頁已進行程式碼優化（狀態重置與計時器邏輯整併、重複計算降低），在不改變使用流程下提升可維護性。
+
 ---
 
 ## ✨ 專案特色
@@ -193,7 +199,7 @@ npm version patch --no-git-tag-version
 | XSLT 比較器 | `/tools/xslt-diff` | 上傳或貼上兩份 XSLT / XML，逐行比較並以左右分割視圖高亮差異、儲存此次轉換 |
 | SQL 比較器 | `/tools/sql-compare` | 上傳或貼上兩份 SQL，自訂 Regex 比較條件，列出左右缺少清單並可儲存結果 |
 | SQL Practice | `/tools/sql-practice` | 預設家具訂單假資料、線上設定 master/detail schema、下載 JSON 範本、匯入資料並在前端執行 SQL 查詢 |
-| Planner Gantt | `/tools/planner-gantt` | 匯入 Microsoft Planner XLSX，依 bucket 與日期產生可互動甘特圖，支援統計摘要與圖片匯出 |
+| Planner Gantt | `/tools/planner-gantt` | 匯入 Microsoft Planner XLSX，依 bucket 與日期產生甘特圖；提供已逾期/即將到期、優先順序、人員與 bucket 分布等檢視摘要，並支援圖片匯出 |
 | 存檔歷史 | `/history` | 顯示所有已儲存 raw data（input/output）、可單筆刪除 |
 
 ---

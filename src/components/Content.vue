@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 interface ToolCard {
   id: string
   name: string
@@ -88,6 +90,20 @@ const toolCards: ToolCard[] = [
 ]
 
 const categories = ['編碼轉換', '數據格式化', '內容預覽', 'XML / XSLT', '資料與 SQL', '專案管理']
+
+const toolCardsByCategory = computed<Record<string, ToolCard[]>>(() => {
+  const grouped: Record<string, ToolCard[]> = Object.fromEntries(categories.map((category) => [category, []]))
+
+  for (const tool of toolCards) {
+    if (!grouped[tool.category]) {
+      grouped[tool.category] = []
+    }
+
+    grouped[tool.category].push(tool)
+  }
+
+  return grouped
+})
 </script>
 
 <template>
@@ -97,7 +113,7 @@ const categories = ['編碼轉換', '數據格式化', '內容預覽', 'XML / XS
         <h2 class="category-title">{{ category }}</h2>
         <div class="tools-grid">
           <RouterLink
-            v-for="tool in toolCards.filter((item) => item.category === category)"
+            v-for="tool in toolCardsByCategory[category]"
             :key="tool.id"
             :to="tool.path"
             class="tool-card"

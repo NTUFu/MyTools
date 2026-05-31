@@ -80,6 +80,7 @@ const errorMessage = ref('')
 const saveStatus = ref<'none' | 'saved'>('none')
 const leftDiffPane = ref<HTMLDivElement | null>(null)
 const rightDiffPane = ref<HTMLDivElement | null>(null)
+let saveStatusTimer: ReturnType<typeof setTimeout> | null = null
 
 let isSyncingDiffPaneScroll = false
 let activeDragPane: HTMLDivElement | null = null
@@ -93,6 +94,59 @@ const compareModeOptions: CompareModeOption[] = [
   { value: 'text-compare', label: '文字比較' },
   { value: 'custom-regex', label: '進階' },
 ]
+
+const resetCompareOutputs = (options?: { clearError?: boolean }) => {
+  compareResult.value = null
+  textDiffResult.value = null
+  lastComparison.value = null
+  saveStatus.value = 'none'
+
+  if (options?.clearError) {
+    errorMessage.value = ''
+  }
+}
+
+const createTextDiffStats = (lines: SideBySideLine[] | null) => {
+  if (!lines) {
+    return null
+  }
+
+  let deleted = 0
+  let inserted = 0
+  let equal = 0
+
+  for (const line of lines) {
+    if (line.leftType === 'delete') {
+      deleted += 1
+    }
+    if (line.rightType === 'insert') {
+      inserted += 1
+    }
+    if (line.leftType === 'equal') {
+      equal += 1
+    }
+  }
+
+  return {
+    deleted,
+    inserted,
+    equal,
+    hasDiff: deleted > 0 || inserted > 0,
+  }
+}
+
+const markSavedTransient = () => {
+  saveStatus.value = 'saved'
+
+  if (saveStatusTimer) {
+    clearTimeout(saveStatusTimer)
+  }
+
+  saveStatusTimer = setTimeout(() => {
+    saveStatus.value = 'none'
+    saveStatusTimer = null
+  }, 2000)
+}
 
 const handleFileUpload = (side: 'left' | 'right', event: Event) => {
   const input = event.target as HTMLInputElement
@@ -114,10 +168,7 @@ const handleFileUpload = (side: 'left' | 'right', event: Event) => {
       rightFileName.value = file.name
     }
 
-    compareResult.value = null
-    textDiffResult.value = null
-    lastComparison.value = null
-    saveStatus.value = 'none'
+    resetCompareOutputs()
     input.value = ''
   }
 
@@ -351,10 +402,7 @@ function buildSideBySide(
 }
 
 const handleCompare = () => {
-  errorMessage.value = ''
-  saveStatus.value = 'none'
-  compareResult.value = null
-  textDiffResult.value = null
+  resetCompareOutputs({ clearError: true })
 
   if (leftContent.value.trim() === '') {
     errorMessage.value = '請提供左側 SQL 內容。'
@@ -468,11 +516,7 @@ const handleClear = () => {
   rightContent.value = ''
   leftFileName.value = ''
   rightFileName.value = ''
-  compareResult.value = null
-  textDiffResult.value = null
-  lastComparison.value = null
-  errorMessage.value = ''
-  saveStatus.value = 'none'
+  resetCompareOutputs({ clearError: true })
 }
 
 const handleSaveCurrent = () => {
@@ -483,13 +527,7 @@ const handleSaveCurrent = () => {
     return
   }
 
-  const textDiffStats = textDiffResult.value
-    ? {
-        deleted: textDiffResult.value.filter((line) => line.leftType === 'delete').length,
-        inserted: textDiffResult.value.filter((line) => line.rightType === 'insert').length,
-        equal: textDiffResult.value.filter((line) => line.leftType === 'equal').length,
-      }
-    : null
+  const textDiffStats = createTextDiffStats(textDiffResult.value)
 
   historyStore.saveHistoryItem({
     tool: 'sql-compare',
@@ -518,10 +556,7 @@ const handleSaveCurrent = () => {
     },
   })
 
-  saveStatus.value = 'saved'
-  setTimeout(() => {
-    saveStatus.value = 'none'
-  }, 2000)
+  markSavedTransient()
 }
 
 const leftUniqueCount = computed(() => compareResult.value?.leftUniqueValues.length ?? 0)
@@ -529,20 +564,7 @@ const rightUniqueCount = computed(() => compareResult.value?.rightUniqueValues.l
 const missingInRightCount = computed(() => compareResult.value?.missingInRight.length ?? 0)
 const missingInLeftCount = computed(() => compareResult.value?.missingInLeft.length ?? 0)
 const textDiffStats = computed(() => {
-  if (!textDiffResult.value) {
-    return null
-  }
-
-  const deleted = textDiffResult.value.filter((line) => line.leftType === 'delete').length
-  const inserted = textDiffResult.value.filter((line) => line.rightType === 'insert').length
-  const equal = textDiffResult.value.filter((line) => line.leftType === 'equal').length
-
-  return {
-    deleted,
-    inserted,
-    equal,
-    hasDiff: deleted > 0 || inserted > 0,
-  }
+  return createTextDiffStats(textDiffResult.value)
 })
 
 const cellBg = (type: CellType): string => {
@@ -676,6 +698,11 @@ if (typeof window !== 'undefined') {
 }
 
 onBeforeUnmount(() => {
+  if (saveStatusTimer) {
+    clearTimeout(saveStatusTimer)
+    saveStatusTimer = null
+  }
+
   if (typeof window === 'undefined') {
     return
   }

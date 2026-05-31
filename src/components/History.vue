@@ -26,13 +26,20 @@ const formatTime = (isoTime: string): string => {
   }
 }
 
-const renderMetadata = (item: ConversionHistoryItem) => {
-  if (!item.metadata || Object.keys(item.metadata).length === 0) {
-    return [] as Array<[string, string | number | boolean | null]>
-  }
+const historyDisplayItems = computed(() => {
+  return historyItems.value.map((item) => {
+    const metadataEntries = !item.metadata || Object.keys(item.metadata).length === 0
+      ? [] as Array<[string, string | number | boolean | null]>
+      : Object.entries(item.metadata)
 
-  return Object.entries(item.metadata)
-}
+    return {
+      ...item,
+      toolName: TOOL_NAME_MAP[item.tool] ?? item.tool,
+      displayTime: formatTime(item.createdAt),
+      metadataEntries,
+    }
+  })
+})
 
 const handleDelete = (id: string) => {
   historyStore.deleteHistoryItem(id)
@@ -49,7 +56,7 @@ onMounted(() => {
     <p style="color: #666; margin-bottom: 15px">顯示各工具手動儲存的 raw data 轉換紀錄。</p>
 
     <div
-      v-if="historyItems.length === 0"
+      v-if="historyDisplayItems.length === 0"
       style="border: 1px dashed #c8c8c8; border-radius: 8px; padding: 20px; color: #666; background-color: #fafafa"
     >
       目前沒有任何存檔紀錄。請先到任一工具按下「儲存此次轉換」。
@@ -57,7 +64,7 @@ onMounted(() => {
 
     <div v-else style="display: flex; flex-direction: column; gap: 12px">
       <div
-        v-for="item in historyItems"
+        v-for="item in historyDisplayItems"
         :key="item.id"
         style="border: 1px solid #ddd; border-radius: 8px; background-color: #fff; padding: 14px"
       >
@@ -65,8 +72,8 @@ onMounted(() => {
           style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 10px"
         >
           <div style="display: flex; flex-direction: column; gap: 4px">
-            <strong>{{ TOOL_NAME_MAP[item.tool] }} / {{ item.action }}</strong>
-            <span style="color: #888; font-size: 0.85em">{{ formatTime(item.createdAt) }}</span>
+            <strong>{{ item.toolName }} / {{ item.action }}</strong>
+            <span style="color: #888; font-size: 0.85em">{{ item.displayTime }}</span>
           </div>
           <button
             @click="handleDelete(item.id)"
@@ -77,8 +84,8 @@ onMounted(() => {
           </button>
         </div>
 
-        <div v-if="renderMetadata(item).length" style="margin-bottom: 10px; color: #666; font-size: 0.9em">
-          <span v-for="[key, value] in renderMetadata(item)" :key="key" style="margin-right: 12px">
+        <div v-if="item.metadataEntries.length" style="margin-bottom: 10px; color: #666; font-size: 0.9em">
+          <span v-for="[key, value] in item.metadataEntries" :key="key" style="margin-right: 12px">
             {{ key }}: {{ String(value) }}
           </span>
         </div>

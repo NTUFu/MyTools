@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { DocumentDuplicateIcon } from '@heroicons/vue/24/outline'
 import { useHistoryStore } from '../../stores/history'
 
@@ -110,6 +110,47 @@ const saveStatus = ref<'none' | 'saved'>('none')
 const copyStatus = ref<CopyStatus>('none')
 const lastConversion = ref<LastJwtConversion | null>(null)
 
+let copyStatusTimer: ReturnType<typeof setTimeout> | null = null
+let saveStatusTimer: ReturnType<typeof setTimeout> | null = null
+
+const clearStatusTimer = (type: 'copy' | 'save') => {
+  if (type === 'copy') {
+    if (copyStatusTimer) {
+      clearTimeout(copyStatusTimer)
+      copyStatusTimer = null
+    }
+    return
+  }
+
+  if (saveStatusTimer) {
+    clearTimeout(saveStatusTimer)
+    saveStatusTimer = null
+  }
+}
+
+const resetUiStatus = () => {
+  saveStatus.value = 'none'
+  copyStatus.value = 'none'
+}
+
+const markCopiedTransient = (target: Exclude<CopyStatus, 'none'>) => {
+  copyStatus.value = target
+  clearStatusTimer('copy')
+  copyStatusTimer = setTimeout(() => {
+    copyStatus.value = 'none'
+    copyStatusTimer = null
+  }, 1800)
+}
+
+const markSavedTransient = () => {
+  saveStatus.value = 'saved'
+  clearStatusTimer('save')
+  saveStatusTimer = setTimeout(() => {
+    saveStatus.value = 'none'
+    saveStatusTimer = null
+  }, 2000)
+}
+
 const headerText = computed(() => (decodedJwt.value ? JSON.stringify(decodedJwt.value.header, null, 2) : ''))
 const payloadText = computed(() => (decodedJwt.value ? JSON.stringify(decodedJwt.value.payload, null, 2) : ''))
 const signatureText = computed(() => decodedJwt.value?.signature ?? '')
@@ -138,8 +179,7 @@ const expirationStatus = computed(() => {
 
 const handleDecode = () => {
   errorMessage.value = ''
-  saveStatus.value = 'none'
-  copyStatus.value = 'none'
+  resetUiStatus()
 
   try {
     const decoded = parseJwtToken(tokenInput.value)
@@ -183,10 +223,7 @@ const handleCopy = async (text: string, target: Exclude<CopyStatus, 'none'>, emp
 
   try {
     await navigator.clipboard.writeText(text)
-    copyStatus.value = target
-    setTimeout(() => {
-      copyStatus.value = 'none'
-    }, 1800)
+    markCopiedTransient(target)
   } catch {
     errorMessage.value = '複製失敗：瀏覽器不支援或未授予權限。'
   }
@@ -208,11 +245,13 @@ const handleSaveCurrent = () => {
     metadata: lastConversion.value.metadata,
   })
 
-  saveStatus.value = 'saved'
-  setTimeout(() => {
-    saveStatus.value = 'none'
-  }, 2000)
+  markSavedTransient()
 }
+
+onBeforeUnmount(() => {
+  clearStatusTimer('copy')
+  clearStatusTimer('save')
+})
 </script>
 
 <template>
@@ -255,7 +294,7 @@ const handleSaveCurrent = () => {
           rows="16"
           placeholder="請貼上 JWT，例如：eyJhbGciOi..."
           style="flex: 1; width: 100%; padding: 10px; box-sizing: border-box; font-family: Consolas, monospace; font-size: 14px; resize: none; border: 1px solid #ccc; border-radius: 5px"
-          @input="errorMessage = ''; saveStatus = 'none'; copyStatus = 'none'"
+          @input="errorMessage = ''; resetUiStatus()"
         />
       </div>
 

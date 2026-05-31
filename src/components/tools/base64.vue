@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import { useHistoryStore } from '../../stores/history'
 
 type CopyStatus = 'none' | 'plain' | 'base64'
@@ -34,10 +34,62 @@ const copyStatus = ref<CopyStatus>('none')
 const saveStatus = ref<'none' | 'saved'>('none')
 const lastConversion = ref<LastBase64Conversion | null>(null)
 
-const handleConvert = () => {
+let copyStatusTimer: ReturnType<typeof setTimeout> | null = null
+let saveStatusTimer: ReturnType<typeof setTimeout> | null = null
+
+const clearStatusTimer = (type: 'copy' | 'save') => {
+  if (type === 'copy') {
+    if (copyStatusTimer) {
+      clearTimeout(copyStatusTimer)
+      copyStatusTimer = null
+    }
+    return
+  }
+
+  if (saveStatusTimer) {
+    clearTimeout(saveStatusTimer)
+    saveStatusTimer = null
+  }
+}
+
+const resetUiStatus = () => {
   error.value = ''
   copyStatus.value = 'none'
   saveStatus.value = 'none'
+}
+
+const markCopiedTransient = (type: CopyStatus) => {
+  copyStatus.value = type
+  clearStatusTimer('copy')
+  copyStatusTimer = setTimeout(() => {
+    copyStatus.value = 'none'
+    copyStatusTimer = null
+  }, 2000)
+}
+
+const markSavedTransient = () => {
+  saveStatus.value = 'saved'
+  clearStatusTimer('save')
+  saveStatusTimer = setTimeout(() => {
+    saveStatus.value = 'none'
+    saveStatusTimer = null
+  }, 2000)
+}
+
+const handlePlainInput = () => {
+  base64Text.value = ''
+  lastConversion.value = null
+  resetUiStatus()
+}
+
+const handleBase64Input = () => {
+  plainText.value = ''
+  lastConversion.value = null
+  resetUiStatus()
+}
+
+const handleConvert = () => {
+  resetUiStatus()
 
   let encoder: (str: string) => string
   let decoder: (str: string) => string
@@ -110,10 +162,7 @@ const handleSaveCurrent = () => {
     },
   })
 
-  saveStatus.value = 'saved'
-  setTimeout(() => {
-    saveStatus.value = 'none'
-  }, 2000)
+  markSavedTransient()
 }
 
 const handleCopy = async (text: string, type: CopyStatus) => {
@@ -123,14 +172,16 @@ const handleCopy = async (text: string, type: CopyStatus) => {
 
   try {
     await navigator.clipboard.writeText(text)
-    copyStatus.value = type
-    setTimeout(() => {
-      copyStatus.value = 'none'
-    }, 2000)
+    markCopiedTransient(type)
   } catch {
     error.value = '複製失敗：瀏覽器不支援或未授予權限。'
   }
 }
+
+onBeforeUnmount(() => {
+  clearStatusTimer('copy')
+  clearStatusTimer('save')
+})
 </script>
 
 <template>
@@ -178,7 +229,7 @@ const handleCopy = async (text: string, type: CopyStatus) => {
         rows="5"
         placeholder="在這裡輸入明文..."
         style="width: 100%; padding: 10px; padding-right: 120px; box-sizing: border-box"
-        @input="base64Text = ''; error = ''; copyStatus = 'none'; saveStatus = 'none'; lastConversion = null"
+        @input="handlePlainInput"
       />
     </div>
 
@@ -226,7 +277,7 @@ const handleCopy = async (text: string, type: CopyStatus) => {
         rows="5"
         placeholder="在這裡輸入 Base64 進行解碼..."
         style="width: 100%; padding: 10px; padding-right: 120px; box-sizing: border-box"
-        @input="plainText = ''; error = ''; copyStatus = 'none'; saveStatus = 'none'; lastConversion = null"
+        @input="handleBase64Input"
       />
     </div>
   </div>

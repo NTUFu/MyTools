@@ -28,6 +28,14 @@ const historyStore = useHistoryStore()
 
 let sqlJsPromise: Promise<SqlJsStatic> | null = null
 
+const cloneImportPayload = (payload: SqlPracticeImportPayload): SqlPracticeImportPayload => {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(payload)
+  }
+
+  return JSON.parse(JSON.stringify(payload)) as SqlPracticeImportPayload
+}
+
 const getSqlJs = () => {
   if (!sqlJsPromise) {
     sqlJsPromise = initSqlJs({
@@ -48,7 +56,7 @@ const initialState = createInitialState()
 
 const schema = ref<SqlPracticeSchema>(initialState.schema)
 const importPayload = ref<SqlPracticeImportPayload>(initialState.data)
-const basePayload = ref<SqlPracticeImportPayload>(JSON.parse(JSON.stringify(initialState.data)) as SqlPracticeImportPayload)
+const basePayload = ref<SqlPracticeImportPayload>(cloneImportPayload(initialState.data))
 const sqlQuery = ref(initialState.sql)
 const queryColumns = ref<string[]>([])
 const queryRows = ref<Array<Record<string, string | number | null>>>([])
@@ -61,6 +69,21 @@ const saveStatus = ref<'none' | 'saved'>('none')
 const isRunningQuery = ref(false)
 const isImporting = ref(false)
 const isSqlReady = ref(false)
+
+const resetQueryResult = () => {
+  queryColumns.value = []
+  queryRows.value = []
+}
+
+const resetQueryFeedback = () => {
+  queryError.value = ''
+  queryInfo.value = ''
+}
+
+const resetQueryState = () => {
+  resetQueryResult()
+  resetQueryFeedback()
+}
 
 const masterPrimaryKeyOptions = computed(() =>
   schema.value.master.columns.map((column) => ({ label: column.name, value: column.name })),
@@ -99,10 +122,7 @@ const syncCurrentDataWithSchema = (message = 'Schema 已更新，已盡量保留
   importPayload.value = reconciledPayload
   importErrors.value = validation.ok ? [] : validation.errors
   importStatus.value = validation.ok ? message : `${message} 請檢查下方資料錯誤。`
-  queryColumns.value = []
-  queryRows.value = []
-  queryError.value = ''
-  queryInfo.value = ''
+  resetQueryState()
   saveStatus.value = 'none'
 }
 
@@ -186,15 +206,12 @@ const handleResetDefaults = () => {
   const nextState = createInitialState()
   schema.value = nextState.schema
   importPayload.value = nextState.data
-  basePayload.value = JSON.parse(JSON.stringify(nextState.data)) as SqlPracticeImportPayload
+  basePayload.value = cloneImportPayload(nextState.data)
   sqlQuery.value = nextState.sql
   importErrors.value = []
   importStatus.value = '已重新載入預設家具訂單資料。'
   schemaStatus.value = ''
-  queryColumns.value = []
-  queryRows.value = []
-  queryError.value = ''
-  queryInfo.value = ''
+  resetQueryState()
   saveStatus.value = 'none'
 }
 
@@ -248,10 +265,7 @@ const handleFileImport = async (event: Event) => {
 
   isImporting.value = true
   importErrors.value = []
-  queryColumns.value = []
-  queryRows.value = []
-  queryError.value = ''
-  queryInfo.value = ''
+  resetQueryState()
 
   try {
     const fileContent = await file.text()
@@ -265,7 +279,7 @@ const handleFileImport = async (event: Event) => {
     }
 
     importPayload.value = validation.data
-    basePayload.value = JSON.parse(JSON.stringify(validation.data)) as SqlPracticeImportPayload
+    basePayload.value = cloneImportPayload(validation.data)
     importStatus.value = `匯入成功：Master ${validation.data.masterRows.length} 筆、Detail ${validation.data.detailRows.length} 筆。`
   } catch {
     importErrors.value = [{ section: 'meta', rowIndex: null, field: null, message: 'JSON 解析失敗，請確認檔案格式正確。' }]
@@ -422,13 +436,10 @@ const handleSaveCurrent = () => {
 }
 
 const handleResetToBase = () => {
-  importPayload.value = JSON.parse(JSON.stringify(basePayload.value)) as SqlPracticeImportPayload
+  importPayload.value = cloneImportPayload(basePayload.value)
   importErrors.value = []
   importStatus.value = '已還原至最後一次載入的資料。'
-  queryColumns.value = []
-  queryRows.value = []
-  queryError.value = ''
-  queryInfo.value = ''
+  resetQueryState()
   saveStatus.value = 'none'
 }
 </script>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, type CSSProperties } from 'vue'
+import { computed, onBeforeUnmount, ref, type CSSProperties } from 'vue'
 import { useHistoryStore } from '../../stores/history'
 import JsonTreeNode from './JsonTreeNode.vue'
 
@@ -38,6 +38,9 @@ const searchKeyword = ref('')
 const lastConversion = ref<LastJsonConversion | null>(null)
 const saveStatus = ref<'none' | 'saved'>('none')
 const lineNumberContainer = ref<HTMLDivElement | null>(null)
+
+let copyStatusTimer: ReturnType<typeof setTimeout> | null = null
+let saveStatusTimer: ReturnType<typeof setTimeout> | null = null
 
 const TEXTAREA_LINE_HEIGHT = 18
 const TEXTAREA_PADDING_TOP = 5
@@ -232,6 +235,54 @@ const resetInputState = () => {
   saveStatus.value = 'none'
 }
 
+const resetErrorState = () => {
+  error.value = ''
+  errorDetails.value = []
+  hasJsonSyntaxError.value = false
+  errorLineNumber.value = null
+  errorColumnNumber.value = null
+  errorHighlightLength.value = 1
+}
+
+const clearStatusTimer = (type: 'copy' | 'save') => {
+  if (type === 'copy') {
+    if (copyStatusTimer) {
+      clearTimeout(copyStatusTimer)
+      copyStatusTimer = null
+    }
+    return
+  }
+
+  if (saveStatusTimer) {
+    clearTimeout(saveStatusTimer)
+    saveStatusTimer = null
+  }
+}
+
+const markCopiedTransient = () => {
+  copyStatus.value = 'copied'
+  clearStatusTimer('copy')
+  copyStatusTimer = setTimeout(() => {
+    copyStatus.value = 'none'
+    copyStatusTimer = null
+  }, 2000)
+}
+
+const markSavedTransient = () => {
+  saveStatus.value = 'saved'
+  clearStatusTimer('save')
+  saveStatusTimer = setTimeout(() => {
+    saveStatus.value = 'none'
+    saveStatusTimer = null
+  }, 2000)
+}
+
+const prepareConversion = () => {
+  resetErrorState()
+  copyStatus.value = 'none'
+  saveStatus.value = 'none'
+}
+
 const handleTextareaScroll = (event: Event) => {
   if (!lineNumberContainer.value) return
   const target = event.target as HTMLTextAreaElement
@@ -281,24 +332,14 @@ const handleCopy = async () => {
 
   try {
     await navigator.clipboard.writeText(jsonInput.value)
-    copyStatus.value = 'copied'
-    setTimeout(() => {
-      copyStatus.value = 'none'
-    }, 2000)
+    markCopiedTransient()
   } catch {
     error.value = '複製失敗：瀏覽器不支援或未授予權限。'
   }
 }
 
 const handleFormat = () => {
-  error.value = ''
-  errorDetails.value = []
-  hasJsonSyntaxError.value = false
-  errorLineNumber.value = null
-  errorColumnNumber.value = null
-  errorHighlightLength.value = 1
-  copyStatus.value = 'none'
-  saveStatus.value = 'none'
+  prepareConversion()
 
   if (jsonInput.value.trim() === '') {
     return
@@ -322,14 +363,7 @@ const handleFormat = () => {
 }
 
 const handleMinify = () => {
-  error.value = ''
-  errorDetails.value = []
-  hasJsonSyntaxError.value = false
-  errorLineNumber.value = null
-  errorColumnNumber.value = null
-  errorHighlightLength.value = 1
-  copyStatus.value = 'none'
-  saveStatus.value = 'none'
+  prepareConversion()
 
   if (jsonInput.value.trim() === '') {
     return
@@ -354,17 +388,7 @@ const handleMinify = () => {
 
 const handleClear = () => {
   jsonInput.value = ''
-  error.value = ''
-  errorDetails.value = []
-  hasJsonSyntaxError.value = false
-  errorLineNumber.value = null
-  errorColumnNumber.value = null
-  errorHighlightLength.value = 1
-  copyStatus.value = 'none'
-  parsedJson.value = null
-  searchKeyword.value = ''
-  lastConversion.value = null
-  saveStatus.value = 'none'
+  resetInputState()
 }
 
 const handleSaveCurrent = () => {
@@ -382,11 +406,13 @@ const handleSaveCurrent = () => {
     output: lastConversion.value.output,
   })
 
-  saveStatus.value = 'saved'
-  setTimeout(() => {
-    saveStatus.value = 'none'
-  }, 2000)
+  markSavedTransient()
 }
+
+onBeforeUnmount(() => {
+  clearStatusTimer('copy')
+  clearStatusTimer('save')
+})
 </script>
 
 <template>

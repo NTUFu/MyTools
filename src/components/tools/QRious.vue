@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import QRious from 'qrious'
 import jsQR from 'jsqr'
 import { useHistoryStore } from '../../stores/history'
@@ -15,6 +15,22 @@ const lastDecodeSource = ref('')
 const qrCanvasRef = ref<HTMLCanvasElement | null>(null)
 const tempCanvasRef = ref<HTMLCanvasElement | null>(null)
 
+let qriousInstance: QRious | null = null
+let saveStatusTimer: ReturnType<typeof setTimeout> | null = null
+
+const markSavedTransient = (status: 'saved-encode' | 'saved-decode') => {
+  saveStatus.value = status
+
+  if (saveStatusTimer) {
+    clearTimeout(saveStatusTimer)
+  }
+
+  saveStatusTimer = setTimeout(() => {
+    saveStatus.value = 'none'
+    saveStatusTimer = null
+  }, 2000)
+}
+
 const generateQRCode = () => {
   if (!qrCanvasRef.value) {
     encodeError.value = '編碼失敗：Canvas 元素未準備好。'
@@ -29,13 +45,17 @@ const generateQRCode = () => {
   encodeError.value = ''
 
   try {
-    new QRious({
-      element: qrCanvasRef.value,
-      value: inputValue.value,
-      size: 256,
-      padding: 15,
-      level: 'H',
-    })
+    if (!qriousInstance) {
+      qriousInstance = new QRious({
+        element: qrCanvasRef.value,
+        value: inputValue.value,
+        size: 256,
+        padding: 15,
+        level: 'H',
+      })
+    } else {
+      qriousInstance.set({ value: inputValue.value })
+    }
   } catch {
     encodeError.value = '生成 QR Code 發生錯誤。'
   }
@@ -119,10 +139,7 @@ const handleSaveEncode = () => {
     },
   })
 
-  saveStatus.value = 'saved-encode'
-  setTimeout(() => {
-    saveStatus.value = 'none'
-  }, 2000)
+  markSavedTransient('saved-encode')
 }
 
 const handleSaveDecode = () => {
@@ -144,10 +161,7 @@ const handleSaveDecode = () => {
     },
   })
 
-  saveStatus.value = 'saved-decode'
-  setTimeout(() => {
-    saveStatus.value = 'none'
-  }, 2000)
+  markSavedTransient('saved-decode')
 }
 
 watch(inputValue, () => {
@@ -157,6 +171,14 @@ watch(inputValue, () => {
 
 onMounted(() => {
   generateQRCode()
+})
+
+onBeforeUnmount(() => {
+  if (saveStatusTimer) {
+    clearTimeout(saveStatusTimer)
+    saveStatusTimer = null
+  }
+  qriousInstance = null
 })
 </script>
 
