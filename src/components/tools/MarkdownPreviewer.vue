@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { marked } from 'marked'
+import * as Mammoth from 'mammoth'
+import TurndownService from 'turndown'
+import * as XLSX from 'xlsx'
 import { useHistoryStore } from '../../stores/history'
 
 const historyStore = useHistoryStore()
@@ -9,6 +12,45 @@ const markdownInput = ref('')
 const saveStatus = ref<'none' | 'saved'>('none')
 const errorMessage = ref('')
 const isFullscreen = ref(false)
+const selectedFileName = ref('')
+const isParsingFile = ref(false)
+const parseStatus = ref('')
+const usePythonApi = ref(true)
+const pythonApiError = ref('')
+const pythonApiAvailable = ref<boolean | null>(null)
+const isLocalRuntime = computed(() => {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  const hostname = window.location.hostname
+  return hostname === 'localhost' || hostname === '127.0.0.1'
+})
+
+const turndown = new TurndownService({
+  headingStyle: 'atx',
+  codeBlockStyle: 'fenced',
+})
+
+const markItDownSupportedTypes = [
+  '.pdf',
+  '.docx',
+  '.pptx',
+  '.xlsx',
+  '.xls',
+  '.csv',
+  '.html',
+  '.htm',
+  '.xml',
+  '.json',
+  '.txt',
+  '.md',
+  '.jpg/.jpeg/.png',
+  '.wav/.mp3',
+]
+
+const browserParsedTypes = ['.md', '.markdown', '.txt', '.html', '.htm', '.json', '.xml', '.yaml', '.yml', '.csv', '.xlsx', '.xls', '.docx']
+const pythonApiPreferredTypes = ['.pdf', '.pptx', '.docx', '.xlsx', '.xls', '.csv', '.html', '.htm', '.xml', '.json', '.txt', '.md', '.jpg', '.jpeg', '.png', '.wav', '.mp3', '.zip', '.epub']
 
 let saveStatusTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -28,6 +70,217 @@ const markSavedTransient = () => {
 const handleInputChange = () => {
   saveStatus.value = 'none'
   errorMessage.value = ''
+}
+
+const parseUploadedFileViaPythonApi = async (file: File): Promise<string> => {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch('/api/convert', {
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`
+    try {
+      const payload = (await response.json()) as { detail?: string }
+      if (typeof payload.detail === 'string' && payload.detail.trim() !== '') {
+        detail = payload.detail
+      }
+    } catch {
+      // Keep default HTTP error text.
+    }
+
+    throw new Error(detail)
+  }
+
+  const payload = (await response.json()) as { markdown?: string }
+  if (typeof payload.markdown !== 'string') {
+    throw new Error('API 回傳格式不正確。')
+  }
+
+  return payload.markdown
+}
+
+const checkPythonApiAvailability = async () => {
+  try {
+    const response = await fetch('/api/health')
+    pythonApiAvailable.value = response.ok
+    if (!response.ok) {
+      pythonApiError.value = '本地 Python API 未啟動，將使用前端解析。'
+    }
+  } catch {
+    pythonApiAvailable.value = false
+    pythonApiError.value = '本地 Python API 未啟動，將使用前端解析。'
+  }
+}
+
+const getFileExtension = (name: string): string => {
+  const idx = name.lastIndexOf('.')
+  if (idx < 0) {
+    return ''
+  }
+
+  return name.slice(idx).toLowerCase()
+}
+
+const buildMarkdownTable = (rows: string[][]): string => {
+  if (rows.length === 0) {
+    return ''
+  }
+
+  const maxColumns = Math.max(...rows.map((row) => row.length))
+  const normalizedRows = rows.map((row) => Array.from({ length: maxColumns }, (_, idx) => String(row[idx] ?? '').trim()))
+  const [headerRow, ...bodyRows] = normalizedRows
+  const safeHeader = headerRow.map((cell, idx) => (cell === '' ? `Column ${idx + 1}` : cell))
+  const separator = safeHeader.map(() => '---')
+  const markdownRows = [safeHeader, separator, ...bodyRows]
+
+  return markdownRows.map((row) => `| ${row.map((cell) => cell.replace(/\|/g, '\\|')).join(' | ')} |`).join('\n')
+}
+
+const parseCsvAsMarkdown = async (file: File): Promise<string> => {
+  const text = await file.text()
+  const workbook = XLSX.read(text, { type: 'string', raw: false })
+  const firstSheetName = workbook.SheetNames[0]
+
+  if (!firstSheetName) {
+    throw new Error('CSV 內容為空。')
+  }
+
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[firstSheetName], {
+    header: 1,
+    blankrows: false,
+    raw: false,
+    defval: '',
+  })
+
+  const rows = matrix.map((row) => (Array.isArray(row) ? row.map((cell) => String(cell ?? '')) : []))
+  if (rows.length === 0) {
+    throw new Error('CSV 沒有可轉換內容。')
+  }
+
+  return buildMarkdownTable(rows)
+}
+
+const parseXlsxAsMarkdown = async (file: File): Promise<string> => {
+  const buffer = await file.arrayBuffer()
+  const workbook = XLSX.read(buffer, { type: 'array', raw: false })
+  const firstSheetName = workbook.SheetNames[0]
+
+  if (!firstSheetName) {
+    throw new Error('Excel 內容為空。')
+  }
+
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[firstSheetName], {
+    header: 1,
+    blankrows: false,
+    raw: false,
+    defval: '',
+  })
+
+  const rows = matrix.map((row) => (Array.isArray(row) ? row.map((cell) => String(cell ?? '')) : []))
+  if (rows.length === 0) {
+    throw new Error('Excel 沒有可轉換內容。')
+  }
+
+  return buildMarkdownTable(rows)
+}
+
+const parseDocxAsMarkdown = async (file: File): Promise<string> => {
+  const buffer = await file.arrayBuffer()
+  const { value: html } = await Mammoth.convertToHtml({ arrayBuffer: buffer })
+  return turndown.turndown(html)
+}
+
+const parseUploadedFileToMarkdown = async (file: File): Promise<string> => {
+  const ext = getFileExtension(file.name)
+
+  if (ext === '.md' || ext === '.markdown' || ext === '.txt') {
+    return await file.text()
+  }
+
+  if (ext === '.html' || ext === '.htm') {
+    const html = await file.text()
+    return turndown.turndown(html)
+  }
+
+  if (ext === '.json') {
+    const text = await file.text()
+    try {
+      const parsed = JSON.parse(text)
+      return `\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\``
+    } catch {
+      return `\`\`\`json\n${text}\n\`\`\``
+    }
+  }
+
+  if (ext === '.xml' || ext === '.yaml' || ext === '.yml') {
+    const text = await file.text()
+    const lang = ext === '.xml' ? 'xml' : 'yaml'
+    return `\`\`\`${lang}\n${text}\n\`\`\``
+  }
+
+  if (ext === '.csv') {
+    return await parseCsvAsMarkdown(file)
+  }
+
+  if (ext === '.xlsx' || ext === '.xls') {
+    return await parseXlsxAsMarkdown(file)
+  }
+
+  if (ext === '.docx') {
+    return await parseDocxAsMarkdown(file)
+  }
+
+  throw new Error(`目前前端版本尚未支援 ${ext || '此'} 檔案型別。`)
+}
+
+const handleUploadFile = async (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0] ?? null
+
+  parseStatus.value = ''
+  errorMessage.value = ''
+  pythonApiError.value = ''
+  selectedFileName.value = file?.name ?? ''
+
+  if (!file) {
+    return
+  }
+
+  isParsingFile.value = true
+
+  try {
+    if (usePythonApi.value) {
+      try {
+        markdownInput.value = await parseUploadedFileViaPythonApi(file)
+        parseStatus.value = `已由 Python API 解析：${file.name}`
+        saveStatus.value = 'none'
+        return
+      } catch (apiError) {
+        pythonApiAvailable.value = false
+        if (apiError instanceof Error) {
+          pythonApiError.value = `Python API 解析失敗，改用前端解析：${apiError.message}`
+        } else {
+          pythonApiError.value = 'Python API 解析失敗，改用前端解析。'
+        }
+      }
+    }
+
+    markdownInput.value = await parseUploadedFileToMarkdown(file)
+    saveStatus.value = 'none'
+    parseStatus.value = `已完成前端解析：${file.name}`
+  } catch (error) {
+    if (error instanceof Error) {
+      errorMessage.value = `檔案解析失敗：${error.message}`
+    } else {
+      errorMessage.value = '檔案解析失敗：未知錯誤。'
+    }
+  } finally {
+    isParsingFile.value = false
+  }
 }
 
 const toggleFullscreen = () => {
@@ -66,12 +319,60 @@ onBeforeUnmount(() => {
     saveStatusTimer = null
   }
 })
+
+onMounted(() => {
+  if (isLocalRuntime.value) {
+    usePythonApi.value = true
+    void checkPythonApiAvailability()
+    return
+  }
+
+  usePythonApi.value = false
+  pythonApiAvailable.value = false
+  pythonApiError.value = '目前為靜態部署環境，已停用本地 Python API。'
+})
 </script>
 
 <template>
   <div style="padding: 20px; display: flex; flex-direction: column; gap: 20px; min-height: 80vh; font-family: Inter, sans-serif">
     <h1>Markdown 實時預覽器</h1>
     <p style="color: #666; margin-bottom: 15px">在左側輸入 Markdown 文本。</p>
+
+    <div style="border: 1px solid #dbeafe; background: #f8fbff; border-radius: 8px; padding: 12px">
+      <div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap">
+        <strong>MarkItDown 參考：</strong>
+        <a href="https://github.com/microsoft/markitdown" target="_blank" rel="noopener noreferrer">
+          microsoft/markitdown
+        </a>
+      </div>
+      <p style="margin: 8px 0 6px 0; color: #444">官方支援類型（依專案說明）：{{ markItDownSupportedTypes.join('、') }}</p>
+      <p style="margin: 0; color: #666">目前此頁面前端可直接解析：{{ browserParsedTypes.join('、') }}。其中 HTML 會自動轉成 Markdown。</p>
+      <p style="margin: 6px 0 0 0; color: #666">本地 Python API 優先支援類型：{{ pythonApiPreferredTypes.join('、') }}</p>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <template v-if="isLocalRuntime">
+        <label style="display: flex; align-items: center; gap: 6px; color: #444">
+          <input v-model="usePythonApi" type="checkbox">
+          優先使用本地 Python 轉換 API（MarkItDown）
+        </label>
+        <p v-if="pythonApiAvailable === true" style="margin: 0; color: #2e7d32">本地 Python API 狀態：可連線</p>
+        <p v-else-if="pythonApiAvailable === false" style="margin: 0; color: #ed6c02">本地 Python API 狀態：不可用，會自動改用前端解析</p>
+      </template>
+      <p v-else style="margin: 0; color: #ed6c02">目前為靜態部署環境，固定使用前端解析。</p>
+      <p v-if="pythonApiError" style="margin: 0; color: #ed6c02">{{ pythonApiError }}</p>
+
+      <label for="markdownUpload" style="font-weight: bold">上傳檔案（解析為 Markdown）</label>
+      <input
+        id="markdownUpload"
+        type="file"
+        :disabled="isParsingFile"
+        @change="handleUploadFile"
+      />
+      <p v-if="selectedFileName" style="margin: 0; color: #555">已選擇：{{ selectedFileName }}</p>
+      <p v-if="isParsingFile" style="margin: 0; color: #1976d2">解析中，請稍候...</p>
+      <p v-if="parseStatus" style="margin: 0; color: #2e7d32">{{ parseStatus }}</p>
+    </div>
 
     <p
       v-if="errorMessage"

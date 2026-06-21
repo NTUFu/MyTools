@@ -26,3 +26,9 @@ dist-ssr
 # Local uploads / temp analysis files
 localfile/
 material/
+
+# Local Python API environment
+.venv/
+python_api/.venv/
+python_api/__pycache__/
+python_api/*.pyc

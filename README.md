@@ -24,7 +24,7 @@
 - 模組化元件設計，方便持續新增工具。
 - 支援本地開發、正式打包與靜態站預覽。
 - HTML 預覽器內建 CodeMirror 編輯器，提供行號與 HTML syntax highlighting，支援全屏預覽。
-- Markdown 預覽器支援 HTML 渲染結果全屏顯示。
+- Markdown 預覽器支援檔案上傳解析（含 HTML 自動轉 Markdown）、即時渲染與全屏預覽。
 - CSV/XLSX Parser 支援檔案解析、關鍵字篩選、單筆編輯刪除與 JSON/CSV/TXT 匯出。
 - Planner Gantt 支援匯入 Microsoft Planner XLSX，產生可互動甘特圖與統計摘要。
 - 各工具可手動儲存「此次轉換 raw data」，並集中在存檔歷史檢視與刪除。
@@ -66,6 +66,30 @@ npm run dev
 
 開發站預設啟動於 <http://localhost:5173/>。
 
+若要一鍵同時啟動前端與本地 Python API（會自動檢查/建立 `python_api/.venv`）：
+
+```bash
+npm run dev:local
+```
+
+注意：`dev:local` 需要 Python 3.10+（MarkItDown 要求）。
+若目前版本過舊，`dev:local` 會先詢問是否自動安裝（macOS + Homebrew 環境）。
+
+### （可選）啟動本地 Python 轉換 API（MarkItDown）
+
+若要讓 Markdown Previewer 使用完整 MarkItDown 轉換能力（例如 PDF / PPTX / ZIP 等），可在本機啟動 Python API：
+
+```bash
+cd python_api
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app:app --host 127.0.0.1 --port 8000 --reload
+```
+
+前端開發環境已透過 Vite Proxy 對接 `/api/*` 到 `http://127.0.0.1:8000`。
+啟動後可用健康檢查確認：`GET http://127.0.0.1:8000/api/health`
+
 ---
 
 ## 🧪 常用指令
@@ -74,6 +98,7 @@ npm run dev
 
 ```bash
 npm run dev      # 啟動開發伺服器
+npm run dev:local # 一鍵啟動前端 + 本地 Python API（MarkItDown）
 npm run build    # TypeScript 檢查 + 生產打包
 npm run preview  # 預覽打包結果
 npm run lint     # ESLint 檢查
@@ -193,7 +218,7 @@ npm version patch --no-git-tag-version
 | JWT Decoder | `/tools/jwt-decoder` | 解析 JWT Header/Payload、exp/iat/nbf 時間欄位轉換、儲存此次轉換 |
 | JSON Formatter | `/tools/json-formatter` | Format / Minify、語法校驗、複製結果、可搜尋的格式化預覽、儲存此次轉換 |
 | HTML Previewer | `/tools/html-previewer` | CodeMirror HTML 編輯器（行號、syntax highlighting）、即時預覽、格式化 HTML、全屏預覽、儲存此次轉換 |
-| Markdown Previewer | `/tools/markdown-previewer` | 即時渲染、`marked` 解析、HTML 渲染結果全屏預覽、儲存此次轉換 |
+| Markdown Previewer | `/tools/markdown-previewer` | 即時渲染、`marked` 解析、上傳檔案轉 Markdown（含 HTML 自動轉換）、可勾選優先使用本地 Python MarkItDown API（不可用時自動 fallback 前端解析）、顯示 MarkItDown 支援類型說明、HTML 渲染結果全屏預覽、儲存此次轉換 |
 | CSV/XLSX Parser | `/tools/csv-xlsx-to-json` | 上傳 .csv / .xlsx 分頁瀏覽表格；關鍵字搜尋（符合列黃底標記、僅顯示符合列）；單筆編輯（儲存後即時反映）、單筆刪除（含資料預覽確認 Modal）；可設定分隔符號匯出 JSON / CSV / TXT，匯出以畫面最後呈現資料為準；行號欄凍結，編輯模式同時凍結操作欄 |
 | QRCode Previewer | `/tools/qrious` | 即時產生 QR Code、上傳圖片解碼、儲存此次轉換（編碼/解碼） |
 | XSLT 比較器 | `/tools/xslt-diff` | 上傳或貼上兩份 XSLT / XML，逐行比較並以左右分割視圖高亮差異、儲存此次轉換 |

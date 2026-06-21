@@ -11,6 +11,14 @@ export default defineConfig({
   base: process.env.GITHUB_ACTIONS
     ? `/${(process.env.GITHUB_REPOSITORY?.split('/')[1] ?? 'MyTools')}/`
     : '/',
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+    },
+  },
   define: {
     __APP_VERSION__: JSON.stringify(version),
   },
