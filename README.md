@@ -6,9 +6,9 @@
 
 這是一個以 Vue 3 + TypeScript + Vite 建置的工具型 SPA，整合常用的開發與資料處理小工具。
 
-目前版本：`4.3.0`
+目前版本：`5.1.0`
 
-## 🆕 近期更新（4.3.0）
+## 🆕 近期更新（5.1.0）
 
 - Planner Gantt 新增更完整的檢視資訊：已逾期 / 即將到期統計、優先順序標示（緊急/重要/中/低）、人員與 bucket 分布摘要。
 - Planner Gantt 的「已選擇任務」資訊卡強化缺漏提示規則，快速辨識未填欄位與待完成檢查清單。
@@ -31,7 +31,29 @@
 
 ---
 
-## 📁 目錄結構（重要）
+## 🗺️ 未來規劃 (Roadmap)
+
+根據 `todo.md`，以下為規劃中或正在開發的功能：
+
+### 高優先級
+
+- **URL Encoder / Decoder**: 包含 `encodeURIComponent` 的完整支援。
+- **Unix Timestamp Converter**: 秒、毫秒與 ISO 時間格式互轉。
+- **UUID / ULID Generator**: 支援批次產生。
+- **Hash / HMAC Generator**: 支援 MD5, SHA-1, SHA-256。
+- **Regex Tester**: 即時測試表達式、預覽取代結果與捕獲組。
+- **Diff Compare**: 比較兩段文字的差異。
+
+### 次優先級
+
+- **JSON Schema Validator**: 驗證 JSON 是否符合指定的 Schema。
+- **Cron Expression Helper**: 提供人類可讀的描述與下次觸發時間。
+- **SQL Formatter**: 支援 SQL 的格式化與壓縮。
+- **JWT Decoder 強化**: 加入簽章與 Claim 驗證功能。
+
+---
+
+## � 目錄結構（重要）
 
 本倉庫為單層前端專案，以下為精簡後的重要結構：
 
