@@ -38,6 +38,7 @@ const searchKeyword = ref('')
 const lastConversion = ref<LastJsonConversion | null>(null)
 const saveStatus = ref<'none' | 'saved'>('none')
 const lineNumberContainer = ref<HTMLDivElement | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
 
 let copyStatusTimer: ReturnType<typeof setTimeout> | null = null
 let saveStatusTimer: ReturnType<typeof setTimeout> | null = null
@@ -409,6 +410,37 @@ const handleSaveCurrent = () => {
   markSavedTransient()
 }
 
+const handleImportFile = () => {
+  fileInputRef.value?.click()
+}
+
+const onFileSelected = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  if (!target.files || target.files.length === 0) {
+    return
+  }
+
+  const file = target.files[0]
+  const reader = new FileReader()
+
+  reader.onload = (e) => {
+    const content = e.target?.result
+    if (typeof content === 'string') {
+      jsonInput.value = content
+      resetInputState()
+    } else {
+      error.value = '檔案讀取失敗：無法將檔案內容讀取為文字。'
+    }
+  }
+
+  reader.onerror = () => {
+    error.value = '檔案讀取時發生錯誤。'
+  }
+
+  reader.readAsText(file)
+  target.value = '' // Reset input so the same file can be re-selected
+}
+
 onBeforeUnmount(() => {
   clearStatusTimer('copy')
   clearStatusTimer('save')
@@ -506,6 +538,13 @@ onBeforeUnmount(() => {
         </button>
 
         <button
+          @click="handleImportFile"
+          class="tool-button"
+        >
+          匯入檔案
+        </button>
+
+        <button
           @click="handleSaveCurrent"
           class="tool-button"
           style="--tool-button-bg: #2e7d32"
@@ -514,6 +553,14 @@ onBeforeUnmount(() => {
         </button>
 
         <span v-if="saveStatus === 'saved'" style="color: #2e7d32; align-self: center">✅ 已儲存</span>
+
+        <input
+          ref="fileInputRef"
+          type="file"
+          accept=".json,application/json"
+          style="display: none"
+          @change="onFileSelected"
+        />
       </div>
 
       <!-- Tree view section (grows to fill remaining space) -->
