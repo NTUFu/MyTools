@@ -32,6 +32,20 @@ const toolCards: ToolCard[] = [
     category: '編碼轉換',
   },
   {
+    id: 'hash-generator',
+    name: 'Hash Generator',
+    path: '/tools/hash-generator',
+    description: '產生 MD5/SHA-1/SHA-256/SHA-512 雜湊值',
+    category: '編碼轉換',
+  },
+  {
+    id: 'url-toolkit',
+    name: 'URL Toolkit',
+    path: '/tools/url-toolkit',
+    description: '解析網址、編輯 Query 參數與 URL 編解碼',
+    category: '編碼轉換',
+  },
+  {
     id: 'json',
     name: 'JSON Formatter',
     path: '/tools/json-formatter',
@@ -43,6 +57,20 @@ const toolCards: ToolCard[] = [
     name: 'CSV/XLSX Parser',
     path: '/tools/csv-xlsx-to-json',
     description: '上傳 CSV 或 XLSX，瀏覽表格並匯出 JSON/CSV/TXT',
+    category: '數據格式化',
+  },
+  {
+    id: 'text-diff',
+    name: 'Text Diff',
+    path: '/tools/text-diff',
+    description: '比較兩段文字差異，支援忽略空白與大小寫',
+    category: '數據格式化',
+  },
+  {
+    id: 'regex-tester',
+    name: 'Regex Tester',
+    path: '/tools/regex-tester',
+    description: '測試正則表達式、檢視群組與替換預覽',
     category: '數據格式化',
   },
   {

@@ -7,7 +7,11 @@ export type ToolType =
   | 'jwt-decoder'
   | 'xslt-diff'
   | 'sql-compare'
-  | 'sql-practice';
+  | 'sql-practice'
+  | 'hash-generator'
+  | 'text-diff'
+  | 'url-toolkit'
+  | 'regex-tester';
 
 export interface ConversionHistoryItem {
   id: string;
