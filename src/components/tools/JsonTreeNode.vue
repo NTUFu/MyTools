@@ -8,12 +8,14 @@ interface Props {
   depth: number
   searchKeyword: string
   lineNumber: number
+  expandAll: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   depth: 0,
   searchKeyword: '',
   lineNumber: 1,
+  expandAll: false,
 })
 
 const userOpen = ref(props.depth < 2)
@@ -117,6 +119,7 @@ const hasDescendantMatch = computed((): boolean => {
 // When a search is active, force open if this node or any descendant matches.
 // Otherwise, honour the user's manual toggle state.
 const shouldBeOpen = computed(() => {
+  if (props.expandAll) return true
   if (kw.value && (selfMatches.value || hasDescendantMatch.value)) return true
   return userOpen.value
 })
@@ -210,6 +213,7 @@ const childLineNumbers = computed((): Record<string, number> => {
         :depth="depth + 1"
         :searchKeyword="searchKeyword"
         :lineNumber="childLineNumbers[entry.key]"
+        :expandAll="expandAll"
       />
       <!-- Closing bracket -->
       <div style="display: flex; align-items: baseline; font-family: Consolas, monospace; font-size: 13px; line-height: 1.75; color: #57606a">

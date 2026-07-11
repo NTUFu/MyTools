@@ -35,6 +35,7 @@ const errorHighlightLength = ref(1)
 const copyStatus = ref<CopyStatus>('none')
 const parsedJson = ref<unknown | null>(null)
 const searchKeyword = ref('')
+const expandAllTree = ref(false)
 const lastConversion = ref<LastJsonConversion | null>(null)
 const saveStatus = ref<'none' | 'saved'>('none')
 const lineNumberContainer = ref<HTMLDivElement | null>(null)
@@ -232,6 +233,7 @@ const resetInputState = () => {
   copyStatus.value = 'none'
   parsedJson.value = null
   searchKeyword.value = ''
+  expandAllTree.value = false
   lastConversion.value = null
   saveStatus.value = 'none'
 }
@@ -297,6 +299,7 @@ const parseJson = (): unknown | null => {
 
   try {
     const parsed = JSON.parse(jsonInput.value) as unknown
+    parsedJson.value = parsed
     hasJsonSyntaxError.value = false
     errorLineNumber.value = null
     errorColumnNumber.value = null
@@ -348,13 +351,12 @@ const handleFormat = () => {
 
   const sourceJson = jsonInput.value
   const parsedObject = parseJson()
-  if (!parsedObject) {
+  if (hasJsonSyntaxError.value) {
     return
   }
 
   const formattedJson = JSON.stringify(parsedObject, null, INDENT_SPACES)
   jsonInput.value = formattedJson
-  parsedJson.value = parsedObject
   searchKeyword.value = ''
   lastConversion.value = {
     action: 'format',
@@ -372,13 +374,12 @@ const handleMinify = () => {
 
   const sourceJson = jsonInput.value
   const parsedObject = parseJson()
-  if (!parsedObject) {
+  if (hasJsonSyntaxError.value) {
     return
   }
 
   const minifiedJson = JSON.stringify(parsedObject)
   jsonInput.value = minifiedJson
-  parsedJson.value = parsedObject
   searchKeyword.value = ''
   lastConversion.value = {
     action: 'minify',
@@ -390,6 +391,10 @@ const handleMinify = () => {
 const handleClear = () => {
   jsonInput.value = ''
   resetInputState()
+}
+
+const toggleExpandAll = () => {
+  expandAllTree.value = !expandAllTree.value
 }
 
 const handleSaveCurrent = () => {
@@ -428,6 +433,7 @@ const onFileSelected = (event: Event) => {
     if (typeof content === 'string') {
       jsonInput.value = content
       resetInputState()
+      parseJson()
     } else {
       error.value = '檔案讀取失敗：無法將檔案內容讀取為文字。'
     }
@@ -541,7 +547,7 @@ onBeforeUnmount(() => {
           @click="handleImportFile"
           class="tool-button"
         >
-          匯入檔案
+          匯入 .json
         </button>
 
         <button
@@ -573,6 +579,13 @@ onBeforeUnmount(() => {
             placeholder="搜尋樹狀瀏覽的 key 或 value..."
             style="flex: 1; padding: 4px 6px; border: 1px solid #d0d7de; border-radius: 5px; font-size: 12px; box-sizing: border-box; min-width: 0"
           >
+          <button
+            class="tool-button tool-button--compact"
+            style="--tool-button-bg: #455a64; flex-shrink: 0"
+            @click="toggleExpandAll"
+          >
+            {{ expandAllTree ? '全部收合' : '全部展開' }}
+          </button>
         </div>
 
         <!-- Tree view title and content -->
@@ -584,6 +597,7 @@ onBeforeUnmount(() => {
             :depth="0"
             :searchKeyword="normalizedSearchKeyword"
             :lineNumber="1"
+            :expandAll="expandAllTree"
           />
         </div>
       </div>
