@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { marked } from 'marked'
 import * as Mammoth from 'mammoth'
 import TurndownService from 'turndown'
+import { gfm } from 'turndown-plugin-gfm'
 import * as XLSX from 'xlsx'
 import { useHistoryStore } from '../../stores/history'
 
@@ -31,6 +32,8 @@ const turndown = new TurndownService({
   headingStyle: 'atx',
   codeBlockStyle: 'fenced',
 })
+
+turndown.use(gfm)
 
 const markItDownSupportedTypes = [
   '.pdf',
@@ -70,6 +73,38 @@ const markSavedTransient = () => {
 const handleInputChange = () => {
   saveStatus.value = 'none'
   errorMessage.value = ''
+}
+
+const handleMarkdownPaste = (event: ClipboardEvent) => {
+  const clipboard = event.clipboardData
+  if (!clipboard) {
+    return
+  }
+
+  const html = clipboard.getData('text/html').trim()
+  if (html === '' || !/<table[\s>]/i.test(html)) {
+    return
+  }
+
+  const converted = normalizeMarkdownTables(turndown.turndown(html)).trim()
+  if (converted === '') {
+    return
+  }
+
+  event.preventDefault()
+
+  const target = event.target as HTMLTextAreaElement | null
+  if (!target) {
+    markdownInput.value = markdownInput.value.trim() === '' ? converted : `${markdownInput.value}\n\n${converted}`
+  } else {
+    const start = target.selectionStart
+    const end = target.selectionEnd
+    markdownInput.value = `${markdownInput.value.slice(0, start)}${converted}${markdownInput.value.slice(end)}`
+  }
+
+  saveStatus.value = 'none'
+  errorMessage.value = ''
+  parseStatus.value = '已偵測貼上內容含表格，已自動轉為 Markdown 表格。'
 }
 
 const parseUploadedFileViaPythonApi = async (file: File): Promise<string> => {
@@ -140,6 +175,37 @@ const buildMarkdownTable = (rows: string[][]): string => {
   return markdownRows.map((row) => `| ${row.map((cell) => cell.replace(/\|/g, '\\|')).join(' | ')} |`).join('\n')
 }
 
+const extractRowsFromHtmlTable = (tableHtml: string): string[][] => {
+  if (typeof window === 'undefined') {
+    return []
+  }
+
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(tableHtml, 'text/html')
+  const table = doc.querySelector('table')
+
+  if (!table) {
+    return []
+  }
+
+  return Array.from(table.querySelectorAll('tr'))
+    .map((row) => Array.from(row.querySelectorAll('th, td')).map((cell) => (cell.textContent ?? '').replace(/\s+/g, ' ').trim()))
+    .filter((row) => row.length > 0)
+}
+
+const convertHtmlTableToMarkdown = (tableHtml: string): string => {
+  const rows = extractRowsFromHtmlTable(tableHtml)
+  if (rows.length === 0) {
+    return tableHtml
+  }
+
+  return buildMarkdownTable(rows)
+}
+
+const normalizeMarkdownTables = (markdown: string): string => {
+  return markdown.replace(/<table[\s\S]*?<\/table>/gi, (tableHtml) => convertHtmlTableToMarkdown(tableHtml))
+}
+
 const parseCsvAsMarkdown = async (file: File): Promise<string> => {
   const text = await file.text()
   const workbook = XLSX.read(text, { type: 'string', raw: false })
@@ -191,7 +257,7 @@ const parseXlsxAsMarkdown = async (file: File): Promise<string> => {
 const parseDocxAsMarkdown = async (file: File): Promise<string> => {
   const buffer = await file.arrayBuffer()
   const { value: html } = await Mammoth.convertToHtml({ arrayBuffer: buffer })
-  return turndown.turndown(html)
+  return normalizeMarkdownTables(turndown.turndown(html))
 }
 
 const parseUploadedFileToMarkdown = async (file: File): Promise<string> => {
@@ -203,7 +269,7 @@ const parseUploadedFileToMarkdown = async (file: File): Promise<string> => {
 
   if (ext === '.html' || ext === '.htm') {
     const html = await file.text()
-    return turndown.turndown(html)
+    return normalizeMarkdownTables(turndown.turndown(html))
   }
 
   if (ext === '.json') {
@@ -255,7 +321,7 @@ const handleUploadFile = async (event: Event) => {
   try {
     if (usePythonApi.value) {
       try {
-        markdownInput.value = await parseUploadedFileViaPythonApi(file)
+        markdownInput.value = normalizeMarkdownTables(await parseUploadedFileViaPythonApi(file))
         parseStatus.value = `已由 Python API 解析：${file.name}`
         saveStatus.value = 'none'
         return
@@ -269,7 +335,7 @@ const handleUploadFile = async (event: Event) => {
       }
     }
 
-    markdownInput.value = await parseUploadedFileToMarkdown(file)
+    markdownInput.value = normalizeMarkdownTables(await parseUploadedFileToMarkdown(file))
     saveStatus.value = 'none'
     parseStatus.value = `已完成前端解析：${file.name}`
   } catch (error) {
@@ -311,6 +377,20 @@ const handleSaveCurrent = () => {
   })
 
   markSavedTransient()
+}
+
+const handleConvertInlineHtmlTables = () => {
+  const converted = normalizeMarkdownTables(markdownInput.value)
+
+  if (converted === markdownInput.value) {
+    parseStatus.value = '未偵測到可轉換的 HTML table。'
+    return
+  }
+
+  markdownInput.value = converted
+  saveStatus.value = 'none'
+  errorMessage.value = ''
+  parseStatus.value = '已將輸入內容中的 HTML table 轉為 Markdown 表格。'
 }
 
 onBeforeUnmount(() => {
@@ -383,6 +463,14 @@ onMounted(() => {
 
     <div style="display: flex; gap: 10px; align-items: center">
       <button
+        @click="handleConvertInlineHtmlTables"
+        class="tool-button"
+        style="--tool-button-bg: #1565c0"
+      >
+        轉換輸入中的 HTML 表格
+      </button>
+
+      <button
         @click="handleSaveCurrent"
         class="tool-button"
         style="--tool-button-bg: #2e7d32"
@@ -403,6 +491,7 @@ onMounted(() => {
           :placeholder="placeholderText"
           style="width: 100%; padding: 10px; box-sizing: border-box; font-family: Consolas, monospace; font-size: 14px; flex-grow: 1; min-height: 300px; border-radius: 5px; border: 1px solid #ccc"
           @input="handleInputChange"
+          @paste="handleMarkdownPaste"
         />
       </div>
 
