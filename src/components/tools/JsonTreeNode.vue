@@ -19,6 +19,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const userOpen = ref(props.depth < 2)
+const manuallyClosedDuringExpandAll = ref(false)
 
 const valueType = computed(() => {
   if (props.value === null) return 'null'
@@ -119,12 +120,17 @@ const hasDescendantMatch = computed((): boolean => {
 // When a search is active, force open if this node or any descendant matches.
 // Otherwise, honour the user's manual toggle state.
 const shouldBeOpen = computed(() => {
-  if (props.expandAll) return true
+  if (props.expandAll) return !manuallyClosedDuringExpandAll.value
   if (kw.value && (selfMatches.value || hasDescendantMatch.value)) return true
   return userOpen.value
 })
 
 const toggleOpen = () => {
+  if (props.expandAll) {
+    manuallyClosedDuringExpandAll.value = !manuallyClosedDuringExpandAll.value
+    return
+  }
+
   userOpen.value = !userOpen.value
 }
 
@@ -153,7 +159,7 @@ const childLineNumbers = computed((): Record<string, number> => {
 <template>
   <div :style="{ paddingLeft: depth === 0 ? '0' : '18px' }">
     <div
-      style="display: flex; align-items: baseline; gap: 2px; font-family: Consolas, monospace; font-size: 13px; line-height: 1.75; cursor: default; user-select: none"
+      style="display: flex; align-items: baseline; gap: 2px; font-family: Consolas, monospace; font-size: 13px; line-height: 1.75; cursor: default; user-select: text"
       :style="{ backgroundColor: selfMatches ? '#fff9c4' : 'transparent' }"
     >
       <!-- Line number -->
