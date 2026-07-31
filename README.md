@@ -6,13 +6,14 @@
 
 這是一個以 Vue 3 + TypeScript + Vite 建置的工具型 SPA，整合常用的開發與資料處理小工具。
 
-目前版本：`5.1.0`
+目前版本：`5.5.0`
 
-## 🆕 近期更新（5.1.0）
+## 🆕 近期更新（5.5.0）
 
-- Planner Gantt 新增更完整的檢視資訊：已逾期 / 即將到期統計、優先順序標示（緊急/重要/中/低）、人員與 bucket 分布摘要。
-- Planner Gantt 的「已選擇任務」資訊卡強化缺漏提示規則，快速辨識未填欄位與待完成檢查清單。
-- 多個工具頁已進行程式碼優化（狀態重置與計時器邏輯整併、重複計算降低），在不改變使用流程下提升可維護性。
+- 多個工具頁已進行效能優化，將重型依賴改為按需載入，降低首屏與工具頁的初始化負擔。
+- CSV/XLSX Parser、Planner Gantt、QR Code 相關功能已優化依賴載入流程，避免不必要的資源一開始就被打包進來。
+- Planner Gantt 的資料處理與排序邏輯進一步整理，降低重複計算與渲染成本。
+- Markdown Previewer、HTML Previewer 等編輯器型工具的重型套件已延後載入，提升整體互動流暢度。
 
 ---
 
@@ -25,8 +26,9 @@
 - 支援本地開發、正式打包與靜態站預覽。
 - HTML 預覽器內建 CodeMirror 編輯器，提供行號與 HTML syntax highlighting，支援全屏預覽。
 - Markdown 預覽器支援檔案上傳解析（含 HTML 自動轉 Markdown）、即時渲染與全屏預覽。
-- CSV/XLSX Parser 支援檔案解析、關鍵字篩選、單筆編輯刪除與 JSON/CSV/TXT 匯出。
+- CSV/XLSX Parser 支援自訂表頭列、關鍵字篩選、單筆編輯刪除，並可做主表/明細分組 JSON 匯出。
 - Planner Gantt 支援匯入 Microsoft Planner XLSX，產生可互動甘特圖與統計摘要。
+- Pomodoro Timer 支援自訂專注/休息參數、循環規則與無印良品風格專注計時介面。
 - 各工具可手動儲存「此次轉換 raw data」，並集中在存檔歷史檢視與刪除。
 
 ---
@@ -239,6 +241,7 @@ npm version patch --no-git-tag-version
 | Base64 編解碼 | `/tools/base64` | UTF-8 / ASCII 轉換、雙向編解碼、錯誤提示、儲存此次轉換 |
 | JWT Decoder | `/tools/jwt-decoder` | 解析 JWT Header/Payload、exp/iat/nbf 時間欄位轉換、儲存此次轉換 |
 | JSON Formatter | `/tools/json-formatter` | Format / Minify、語法校驗、複製結果、可搜尋的格式化預覽、儲存此次轉換 |
+| JSON Schema Validator | `/tools/json-schema-validator` | 驗證 JSON 是否符合 Schema，顯示錯誤 path/keyword/message，支援複製錯誤與儲存此次轉換 |
 | HTML Previewer | `/tools/html-previewer` | CodeMirror HTML 編輯器（行號、syntax highlighting）、即時預覽、格式化 HTML、全屏預覽、儲存此次轉換 |
 | Markdown Previewer | `/tools/markdown-previewer` | 即時渲染、`marked` 解析、上傳檔案轉 Markdown（含 HTML 自動轉換）、可勾選優先使用本地 Python MarkItDown API（不可用時自動 fallback 前端解析）、顯示 MarkItDown 支援類型說明、HTML 渲染結果全屏預覽、儲存此次轉換 |
 | CSV/XLSX Parser | `/tools/csv-xlsx-to-json` | 上傳 .csv / .xlsx 分頁瀏覽表格；關鍵字搜尋（符合列黃底標記、僅顯示符合列）；單筆編輯（儲存後即時反映）、單筆刪除（含資料預覽確認 Modal）；可設定分隔符號匯出 JSON / CSV / TXT，匯出以畫面最後呈現資料為準；行號欄凍結，編輯模式同時凍結操作欄 |
@@ -247,6 +250,9 @@ npm version patch --no-git-tag-version
 | SQL 比較器 | `/tools/sql-compare` | 上傳或貼上兩份 SQL，自訂 Regex 比較條件，列出左右缺少清單並可儲存結果 |
 | SQL Practice | `/tools/sql-practice` | 預設家具訂單假資料、線上設定 master/detail schema、下載 JSON 範本、匯入資料並在前端執行 SQL 查詢 |
 | Planner Gantt | `/tools/planner-gantt` | 匯入 Microsoft Planner XLSX，依 bucket 與日期產生甘特圖；提供已逾期/即將到期、優先順序、人員與 bucket 分布等檢視摘要，並支援圖片匯出 |
+| Pomodoro Timer | `/tools/pomodoro-timer` | 可自訂專注/短休息/長休息參數、循環與自動開始規則，採無印良品風格介面 |
+| Timestamp Converter | `/tools/timestamp-converter` | Unix 秒/毫秒、ISO、本地時間互轉，支援自動判斷輸入格式與一鍵帶入現在時間 |
+| UUID / ULID Generator | `/tools/uuid-ulid-generator` | 批次產生 UUID v4、UUID v7、ULID，支援 prefix/suffix、複製全部與儲存此次轉換 |
 | 存檔歷史 | `/history` | 顯示所有已儲存 raw data（input/output）、可單筆刪除 |
 
 ---

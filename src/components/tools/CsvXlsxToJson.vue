@@ -1,13 +1,26 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import * as XLSX from 'xlsx'
+
+let xlsxModule: typeof import('xlsx') | null = null
+
+const ensureXlsxModule = async () => {
+  if (xlsxModule) {
+    return xlsxModule
+  }
+
+  xlsxModule = await import('xlsx')
+  return xlsxModule
+}
 
 const selectedFile = ref<File | null>(null)
 const selectedFileName = ref('')
 const errorMessage = ref('')
 const isParsing = ref(false)
+const headerRowNumber = ref(1)
 const parsedHeaders = ref<string[]>([])
 const parsedRows = ref<string[][]>([])
+const selectedMainColumnKeys = ref<string[]>([])
+const selectedDetailColumnKeys = ref<string[]>([])
 const currentPage = ref(1)
 const pageSize = ref(50)
 const searchQuery = ref('')
@@ -55,6 +68,20 @@ const parsedObjects = computed(() => {
   })
 })
 
+const mainColumnIndexes = computed(() =>
+  selectedMainColumnKeys.value
+    .map((value) => Number(value))
+    .filter((index) => Number.isInteger(index) && index >= 0 && index < parsedHeaders.value.length),
+)
+
+const detailColumnIndexes = computed(() =>
+  selectedDetailColumnKeys.value
+    .map((value) => Number(value))
+    .filter((index) => Number.isInteger(index) && index >= 0 && index < parsedHeaders.value.length),
+)
+
+const hasJsonGrouping = computed(() => mainColumnIndexes.value.length > 0 || detailColumnIndexes.value.length > 0)
+
 const hasParsedData = computed(() => totalRows.value > 0 && totalColumns.value > 0)
 const txtDelimiterChar = computed(() => {
   if (txtDelimiter.value === 'comma') {
@@ -84,6 +111,8 @@ const sanitizeHeader = (header: unknown, index: number): string => {
 const resetParsedState = () => {
   parsedHeaders.value = []
   parsedRows.value = []
+  selectedMainColumnKeys.value = []
+  selectedDetailColumnKeys.value = []
   currentPage.value = 1
   searchQuery.value = ''
   editMode.value = false
@@ -132,6 +161,11 @@ const resetAllState = () => {
   resetParsedState()
 }
 
+const getSafeHeaderRowIndex = () => {
+  const normalized = Number.isFinite(headerRowNumber.value) ? Math.trunc(headerRowNumber.value) : 1
+  return Math.max(1, normalized) - 1
+}
+
 const ensureSupportedFile = (file: File) => {
   const lowerName = file.name.toLowerCase()
   if (lowerName.endsWith('.csv') || lowerName.endsWith('.xlsx')) {
@@ -142,15 +176,16 @@ const ensureSupportedFile = (file: File) => {
 }
 
 const parseWorkbook = async (file: File) => {
+  const xlsx = await ensureXlsxModule()
   const lowerName = file.name.toLowerCase()
 
   if (lowerName.endsWith('.csv')) {
     const content = await file.text()
-    return XLSX.read(content, { type: 'string', raw: false })
+    return xlsx.read(content, { type: 'string', raw: false })
   }
 
   const content = await file.arrayBuffer()
-  return XLSX.read(content, { type: 'array', raw: false })
+  return xlsx.read(content, { type: 'array', raw: false })
 }
 
 const parseFileForBrowsing = async () => {
@@ -173,7 +208,8 @@ const parseFileForBrowsing = async () => {
     }
 
     const firstSheet = workbook.Sheets[firstSheetName]
-    const matrix = XLSX.utils.sheet_to_json<unknown[]>(firstSheet, {
+    const xlsx = await ensureXlsxModule()
+    const matrix = xlsx.utils.sheet_to_json<unknown[]>(firstSheet, {
       header: 1,
       blankrows: false,
       raw: false,
@@ -184,9 +220,12 @@ const parseFileForBrowsing = async () => {
       throw new Error('檔案沒有可解析資料。')
     }
 
-    const [headerRow, ...bodyRows] = matrix
+    const headerRowIndex = getSafeHeaderRowIndex()
+    const headerRow = matrix[headerRowIndex]
+    const bodyRows = matrix.slice(headerRowIndex + 1)
+
     if (!Array.isArray(headerRow) || headerRow.length === 0) {
-      throw new Error('缺少欄位列，請確認第一列為欄位名稱。')
+      throw new Error(`缺少欄位列，請確認第 ${headerRowIndex + 1} 列為欄位名稱。`)
     }
 
     const headers = headerRow.map((cell, index) => sanitizeHeader(cell, index))
@@ -200,6 +239,8 @@ const parseFileForBrowsing = async () => {
 
     parsedHeaders.value = headers
     parsedRows.value = rows
+    selectedMainColumnKeys.value = []
+    selectedDetailColumnKeys.value = []
     currentPage.value = 1
   } catch (error) {
     if (error instanceof Error) {
@@ -248,6 +289,27 @@ const createTimestamp = () => {
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
 }
 
+const normalizeSelectedKeys = (values: string[]) => {
+  const validKeySet = new Set(parsedHeaders.value.map((_, index) => String(index)))
+  const uniqueValues = Array.from(new Set(values))
+  return uniqueValues.filter((value) => validKeySet.has(value))
+}
+
+const toRowObjectByIndexes = (row: string[], indexes: number[]) => {
+  const mapped: Record<string, string> = {}
+
+  indexes.forEach((columnIndex) => {
+    const header = parsedHeaders.value[columnIndex]
+    if (!header) {
+      return
+    }
+
+    mapped[header] = row[columnIndex] ?? ''
+  })
+
+  return mapped
+}
+
 const exportAsJson = () => {
   if (!hasParsedData.value) {
     errorMessage.value = '目前沒有可匯出的資料。'
@@ -255,21 +317,58 @@ const exportAsJson = () => {
   }
 
   errorMessage.value = ''
-  const content = JSON.stringify(parsedObjects.value, null, 2)
+
+  if (!hasJsonGrouping.value) {
+    const content = JSON.stringify(parsedObjects.value, null, 2)
+    const fileName = `${toSafeFileName(selectedFileName.value)}-${createTimestamp()}.json`
+    downloadContent(content, fileName, 'application/json;charset=utf-8')
+    return
+  }
+
+  if (mainColumnIndexes.value.length === 0 || detailColumnIndexes.value.length === 0) {
+    errorMessage.value = '若要使用主表/明細 JSON 匯出，請同時至少選擇一個主表欄位與一個明細欄位。'
+    return
+  }
+
+  const grouped = new Map<string, Record<string, unknown>>()
+
+  parsedRows.value.forEach((row) => {
+    const mainObject = toRowObjectByIndexes(row, mainColumnIndexes.value)
+    const detailObject = toRowObjectByIndexes(row, detailColumnIndexes.value)
+    const groupKey = JSON.stringify(mainColumnIndexes.value.map((columnIndex) => row[columnIndex] ?? ''))
+
+    if (!grouped.has(groupKey)) {
+      grouped.set(groupKey, {
+        ...mainObject,
+        details: [],
+      })
+    }
+
+    const target = grouped.get(groupKey)
+    if (!target) {
+      return
+    }
+
+    const details = target.details as Record<string, string>[]
+    details.push(detailObject)
+  })
+
+  const content = JSON.stringify(Array.from(grouped.values()), null, 2)
   const fileName = `${toSafeFileName(selectedFileName.value)}-${createTimestamp()}.json`
   downloadContent(content, fileName, 'application/json;charset=utf-8')
 }
 
-const exportAsCsv = () => {
+const exportAsCsv = async () => {
   if (!hasParsedData.value) {
     errorMessage.value = '目前沒有可匯出的資料。'
     return
   }
 
   errorMessage.value = ''
+  const xlsx = await ensureXlsxModule()
   const matrix: string[][] = [parsedHeaders.value, ...parsedRows.value]
-  const sheet = XLSX.utils.aoa_to_sheet(matrix)
-  const csv = XLSX.utils.sheet_to_csv(sheet, { FS: txtDelimiterChar.value })
+  const sheet = xlsx.utils.aoa_to_sheet(matrix)
+  const csv = xlsx.utils.sheet_to_csv(sheet, { FS: txtDelimiterChar.value })
   const fileName = `${toSafeFileName(selectedFileName.value)}-${createTimestamp()}.csv`
   downloadContent(csv, fileName, 'text/csv;charset=utf-8')
 }
@@ -351,12 +450,24 @@ const confirmDelete = () => {
 const cancelDelete = () => {
   deleteConfirmIndex.value = null
 }
+
+const updateMainColumns = () => {
+  selectedMainColumnKeys.value = normalizeSelectedKeys(selectedMainColumnKeys.value)
+  const selectedMainSet = new Set(selectedMainColumnKeys.value)
+  selectedDetailColumnKeys.value = selectedDetailColumnKeys.value.filter((value) => !selectedMainSet.has(value))
+}
+
+const updateDetailColumns = () => {
+  selectedDetailColumnKeys.value = normalizeSelectedKeys(selectedDetailColumnKeys.value)
+  const selectedDetailSet = new Set(selectedDetailColumnKeys.value)
+  selectedMainColumnKeys.value = selectedMainColumnKeys.value.filter((value) => !selectedDetailSet.has(value))
+}
 </script>
 
 <template>
   <div style="padding: 20px; width: 100%; box-sizing: border-box">
     <h2>CSV/XLSX Parser</h2>
-    <p style="margin-bottom: 15px">上傳 csv 或 xlsx，分頁瀏覽資料表格；支援關鍵字搜尋（符合列黃底標記）、單筆編輯與刪除（含刪除前預覽確認）；可設定分隔符號後匯出 json、csv、txt，匯出以畫面最後呈現資料為準。</p>
+    <p style="margin-bottom: 15px">上傳 csv 或 xlsx，分頁瀏覽資料表格；支援自訂第幾列作為表頭、關鍵字搜尋（符合列黃底標記）、單筆編輯與刪除（含刪除前預覽確認）；可設定分隔符號後匯出 json、csv、txt，匯出以畫面最後呈現資料為準。</p>
 
     <p
       v-if="errorMessage"
@@ -372,6 +483,16 @@ const cancelDelete = () => {
         @change="handleFileChange"
         style="max-width: 340px"
       >
+      <label style="display: inline-flex; align-items: center; gap: 8px; color: #444; font-size: 13px">
+        表頭列號
+        <input
+          v-model.number="headerRowNumber"
+          type="number"
+          min="1"
+          step="1"
+          style="width: 88px; height: 32px; border: 1px solid #c8c8c8; border-radius: 6px; padding: 0 8px"
+        >
+      </label>
       <button
         class="tool-button"
         style="--tool-button-bg: #1565c0"
@@ -428,6 +549,52 @@ const cancelDelete = () => {
 
       <div style="margin-top: 8px; font-size: 12px; color: #64748b">
         CSV 與 TXT 會共用同一個分隔符號設定。
+      </div>
+
+      <div v-if="hasParsedData" style="margin-top: 12px; border-top: 1px solid #e2e8f0; padding-top: 12px">
+        <div style="font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 8px">JSON 主表 / 明細欄位設定</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px">
+          <label style="display: grid; gap: 6px">
+            <span style="font-size: 13px; color: #334155">主表欄位（可多選）</span>
+            <select
+              multiple
+              v-model="selectedMainColumnKeys"
+              style="min-height: 160px; border: 1px solid #c8c8c8; border-radius: 6px; padding: 6px"
+              @change="updateMainColumns"
+            >
+              <option
+                v-for="(header, columnIndex) in parsedHeaders"
+                :key="`main-${header}-${columnIndex}`"
+                :value="String(columnIndex)"
+              >
+                {{ header }}
+              </option>
+            </select>
+            <span style="font-size: 12px; color: #64748b">已選 {{ mainColumnIndexes.length }} 欄</span>
+          </label>
+
+          <label style="display: grid; gap: 6px">
+            <span style="font-size: 13px; color: #334155">明細欄位（可多選）</span>
+            <select
+              multiple
+              v-model="selectedDetailColumnKeys"
+              style="min-height: 160px; border: 1px solid #c8c8c8; border-radius: 6px; padding: 6px"
+              @change="updateDetailColumns"
+            >
+              <option
+                v-for="(header, columnIndex) in parsedHeaders"
+                :key="`detail-${header}-${columnIndex}`"
+                :value="String(columnIndex)"
+              >
+                {{ header }}
+              </option>
+            </select>
+            <span style="font-size: 12px; color: #64748b">已選 {{ detailColumnIndexes.length }} 欄</span>
+          </label>
+        </div>
+        <div style="margin-top: 8px; font-size: 12px; color: #64748b">
+          未選任何欄位時，JSON 維持一列一筆；若同時選了主表與明細欄位，則會依主表欄位分組，並將明細輸出到 <strong>details</strong> 陣列。主表與明細不可重複，重複時會自動以最新選擇為準。
+        </div>
       </div>
     </div>
 
@@ -576,7 +743,7 @@ const cancelDelete = () => {
             </td>
             <template v-if="editingRowIndex === item.originalIndex - 1">
               <td
-                v-for="(value, columnIndex) in item.row"
+                v-for="(_, columnIndex) in item.row"
                 :key="`cell-edit-${rowIndex}-${columnIndex}`"
                 style="border-top: 1px solid #f0f0f0; padding: 4px 6px; white-space: nowrap"
               >
@@ -589,10 +756,10 @@ const cancelDelete = () => {
             </template>
             <template v-else>
               <td
-                v-for="(value, columnIndex) in item.row"
+                v-for="(_, columnIndex) in item.row"
                 :key="`cell-${rowIndex}-${columnIndex}`"
                 style="border-top: 1px solid #f0f0f0; padding: 8px; font-size: 12px; white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis"
-                v-html="highlightMatch(value)"
+                v-html="highlightMatch(item.row[columnIndex])"
               />
             </template>
           </tr>

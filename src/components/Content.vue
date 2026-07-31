@@ -53,6 +53,13 @@ const toolCards: ToolCard[] = [
     category: '數據格式化',
   },
   {
+    id: 'json-schema-validator',
+    name: 'JSON Schema Validator',
+    path: '/tools/json-schema-validator',
+    description: '驗證 JSON 是否符合 Schema 並列出錯誤路徑',
+    category: '數據格式化',
+  },
+  {
     id: 'csv-xlsx-json',
     name: 'CSV/XLSX Parser',
     path: '/tools/csv-xlsx-to-json',
@@ -65,6 +72,20 @@ const toolCards: ToolCard[] = [
     path: '/tools/text-diff',
     description: '比較兩段文字差異，支援忽略空白與大小寫',
     category: '數據格式化',
+  },
+  {
+    id: 'timestamp-converter',
+    name: 'Timestamp Converter',
+    path: '/tools/timestamp-converter',
+    description: 'Unix 秒/毫秒、ISO 與本地時間互轉',
+    category: '編碼轉換',
+  },
+  {
+    id: 'uuid-ulid-generator',
+    name: 'UUID / ULID Generator',
+    path: '/tools/uuid-ulid-generator',
+    description: '批次產生 UUID v4 / v7 與 ULID',
+    category: '編碼轉換',
   },
   {
     id: 'regex-tester',
@@ -113,6 +134,13 @@ const toolCards: ToolCard[] = [
     name: 'Planner Gantt',
     path: '/tools/planner-gantt',
     description: '匯入 Microsoft Planner XLSX 並生成可互動甘特圖',
+    category: '專案管理',
+  },
+  {
+    id: 'pomodoro-timer',
+    name: 'Pomodoro Timer',
+    path: '/tools/pomodoro-timer',
+    description: '可自訂參數的蕃茄鐘，支援專注與休息循環',
     category: '專案管理',
   },
 ]

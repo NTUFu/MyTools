@@ -1,6 +1,7 @@
 export type ToolType =
   | 'base64'
   | 'json-formatter'
+  | 'json-schema-validator'
   | 'html-previewer'
   | 'markdown-previewer'
   | 'qrious'
@@ -10,6 +11,8 @@ export type ToolType =
   | 'sql-practice'
   | 'hash-generator'
   | 'text-diff'
+  | 'timestamp-converter'
+  | 'uuid-ulid-generator'
   | 'url-toolkit'
   | 'regex-tester';
 

@@ -1,10 +1,32 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import type { EditorView as CodeMirrorEditorView } from 'codemirror'
 import { html as htmlBeautify } from 'js-beautify'
 import { useHistoryStore } from '../../stores/history'
-import { EditorView, basicSetup } from 'codemirror'
-import { html as htmlLang } from '@codemirror/lang-html'
-import { EditorState } from '@codemirror/state'
+
+let EditorViewCtor: typeof import('codemirror').EditorView | null = null
+let basicSetupExt: typeof import('codemirror').basicSetup | null = null
+let htmlLangExt: typeof import('@codemirror/lang-html').html | null = null
+let EditorStateCtor: typeof import('@codemirror/state').EditorState | null = null
+
+const loadEditorDependencies = async () => {
+  if (EditorViewCtor && basicSetupExt && htmlLangExt && EditorStateCtor) {
+    return { EditorView: EditorViewCtor, basicSetup: basicSetupExt, htmlLang: htmlLangExt, EditorState: EditorStateCtor }
+  }
+
+  const [codemirror, langHtml, state] = await Promise.all([
+    import('codemirror'),
+    import('@codemirror/lang-html'),
+    import('@codemirror/state'),
+  ])
+
+  EditorViewCtor = codemirror.EditorView
+  basicSetupExt = codemirror.basicSetup
+  htmlLangExt = langHtml.html
+  EditorStateCtor = state.EditorState
+
+  return { EditorView: EditorViewCtor, basicSetup: basicSetupExt, htmlLang: htmlLangExt, EditorState: EditorStateCtor }
+}
 
 const beautifyOptions = {
   indent_size: 2,
@@ -23,7 +45,8 @@ const iframeRef = ref<HTMLIFrameElement | null>(null)
 const fullscreenIframeRef = ref<HTMLIFrameElement | null>(null)
 const editorContainer = ref<HTMLDivElement | null>(null)
 const isFullscreen = ref(false)
-let editorView: EditorView | null = null
+const isEditorReady = ref(false)
+let editorView: CodeMirrorEditorView | null = null
 
 // Flag to avoid recursive watch ↔ editor sync
 let updatingFromOutside = false
@@ -110,22 +133,26 @@ watch(htmlInput, (newVal) => {
 })
 
 onMounted(() => {
-  if (editorContainer.value) {
-    editorView = new EditorView({
-      state: EditorState.create({
+  void loadEditorDependencies().then(({ EditorView: EditorViewCtor, basicSetup: basicSetupExt, htmlLang: htmlLangExt, EditorState: EditorStateCtor }) => {
+    if (!editorContainer.value) {
+      return
+    }
+
+    editorView = new EditorViewCtor({
+      state: EditorStateCtor.create({
         doc: htmlInput.value,
         extensions: [
-          basicSetup,
-          htmlLang(),
-          EditorView.updateListener.of((update) => {
+          basicSetupExt,
+          htmlLangExt(),
+          EditorViewCtor.updateListener.of((update) => {
             if (update.docChanged) {
               updatingFromOutside = true
               htmlInput.value = update.state.doc.toString()
               updatingFromOutside = false
             }
           }),
-          EditorView.lineWrapping,
-          EditorView.theme({
+          EditorViewCtor.lineWrapping,
+          EditorViewCtor.theme({
             '&': { height: '100%', fontSize: '14px' },
             '.cm-scroller': { overflow: 'auto', fontFamily: 'Consolas, monospace' },
           }),
@@ -133,7 +160,9 @@ onMounted(() => {
       }),
       parent: editorContainer.value,
     })
-  }
+
+    isEditorReady.value = true
+  })
   updatePreview()
 })
 

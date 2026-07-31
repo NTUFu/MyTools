@@ -1,11 +1,40 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { marked } from 'marked'
-import * as Mammoth from 'mammoth'
-import TurndownService from 'turndown'
-import { gfm } from 'turndown-plugin-gfm'
-import * as XLSX from 'xlsx'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useHistoryStore } from '../../stores/history'
+
+import type { default as TurndownClass } from 'turndown'
+import type * as MammothModule from 'mammoth'
+import type { gfm as GfmPlugin } from 'turndown-plugin-gfm'
+import type * as XlsxModule from 'xlsx'
+
+let markedLib: ((value: string) => string | Promise<string>) | null = null
+let mammothLib: typeof MammothModule | null = null
+let turndownServiceCtor: typeof TurndownClass | null = null
+let gfmPlugin: typeof GfmPlugin | null = null
+let xlsxLib: typeof XlsxModule | null = null
+
+const loadMarkdownDependencies = async () => {
+  if (markedLib && mammothLib && turndownServiceCtor && gfmPlugin && xlsxLib) {
+    return { markedLib, mammothLib, turndownServiceCtor, gfmPlugin, xlsxLib }
+  }
+
+  const [markedModule, mammothModule, turndownModule, xlsxModule] = await Promise.all([
+    import('marked'),
+    import('mammoth'),
+    import('turndown'),
+    import('xlsx'),
+  ])
+
+  const gfmModule = await import('turndown-plugin-gfm')
+
+  markedLib = markedModule.marked
+  mammothLib = mammothModule
+  turndownServiceCtor = turndownModule.default
+  gfmPlugin = gfmModule.gfm
+  xlsxLib = xlsxModule
+
+  return { markedLib, mammothLib, turndownServiceCtor, gfmPlugin, xlsxLib }
+}
 
 const historyStore = useHistoryStore()
 
@@ -28,12 +57,7 @@ const isLocalRuntime = computed(() => {
   return hostname === 'localhost' || hostname === '127.0.0.1'
 })
 
-const turndown = new TurndownService({
-  headingStyle: 'atx',
-  codeBlockStyle: 'fenced',
-})
-
-turndown.use(gfm)
+const turndown = ref<TurndownClass | null>(null)
 
 const markItDownSupportedTypes = [
   '.pdf',
@@ -75,8 +99,25 @@ const handleInputChange = () => {
   errorMessage.value = ''
 }
 
-const handleMarkdownPaste = (event: ClipboardEvent) => {
+const ensureTurndownService = async () => {
+  if (turndown.value) {
+    return turndown.value
+  }
+
+  const { turndownServiceCtor, gfmPlugin } = await loadMarkdownDependencies()
+  const service = new turndownServiceCtor({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
+  service.use(gfmPlugin)
+  turndown.value = service
+  return service
+}
+
+const handleMarkdownPaste = async (event: ClipboardEvent) => {
   const clipboard = event.clipboardData
+  if (!clipboard) {
+    return
+  }
+
+  const service = await ensureTurndownService()
   if (!clipboard) {
     return
   }
@@ -86,7 +127,7 @@ const handleMarkdownPaste = (event: ClipboardEvent) => {
     return
   }
 
-  const converted = normalizeMarkdownTables(turndown.turndown(html)).trim()
+  const converted = normalizeMarkdownTables(service.turndown(html)).trim()
   if (converted === '') {
     return
   }
@@ -207,22 +248,23 @@ const normalizeMarkdownTables = (markdown: string): string => {
 }
 
 const parseCsvAsMarkdown = async (file: File): Promise<string> => {
+  const { xlsxLib: xlsx } = await loadMarkdownDependencies()
   const text = await file.text()
-  const workbook = XLSX.read(text, { type: 'string', raw: false })
+  const workbook = xlsx.read(text, { type: 'string', raw: false })
   const firstSheetName = workbook.SheetNames[0]
 
   if (!firstSheetName) {
     throw new Error('CSV 內容為空。')
   }
 
-  const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[firstSheetName], {
+  const matrix = xlsx.utils.sheet_to_json<unknown[]>(workbook.Sheets[firstSheetName], {
     header: 1,
     blankrows: false,
     raw: false,
     defval: '',
   })
 
-  const rows = matrix.map((row) => (Array.isArray(row) ? row.map((cell) => String(cell ?? '')) : []))
+  const rows = matrix.map((row: unknown[]) => (Array.isArray(row) ? row.map((cell) => String(cell ?? '')) : []))
   if (rows.length === 0) {
     throw new Error('CSV 沒有可轉換內容。')
   }
@@ -231,22 +273,23 @@ const parseCsvAsMarkdown = async (file: File): Promise<string> => {
 }
 
 const parseXlsxAsMarkdown = async (file: File): Promise<string> => {
+  const { xlsxLib: xlsx } = await loadMarkdownDependencies()
   const buffer = await file.arrayBuffer()
-  const workbook = XLSX.read(buffer, { type: 'array', raw: false })
+  const workbook = xlsx.read(buffer, { type: 'array', raw: false })
   const firstSheetName = workbook.SheetNames[0]
 
   if (!firstSheetName) {
     throw new Error('Excel 內容為空。')
   }
 
-  const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[firstSheetName], {
+  const matrix = xlsx.utils.sheet_to_json<unknown[]>(workbook.Sheets[firstSheetName], {
     header: 1,
     blankrows: false,
     raw: false,
     defval: '',
   })
 
-  const rows = matrix.map((row) => (Array.isArray(row) ? row.map((cell) => String(cell ?? '')) : []))
+  const rows = matrix.map((row: unknown[]) => (Array.isArray(row) ? row.map((cell) => String(cell ?? '')) : []))
   if (rows.length === 0) {
     throw new Error('Excel 沒有可轉換內容。')
   }
@@ -255,9 +298,12 @@ const parseXlsxAsMarkdown = async (file: File): Promise<string> => {
 }
 
 const parseDocxAsMarkdown = async (file: File): Promise<string> => {
+  const { mammothLib, turndownServiceCtor, gfmPlugin } = await loadMarkdownDependencies()
   const buffer = await file.arrayBuffer()
-  const { value: html } = await Mammoth.convertToHtml({ arrayBuffer: buffer })
-  return normalizeMarkdownTables(turndown.turndown(html))
+  const { value: html } = await mammothLib.convertToHtml({ arrayBuffer: buffer })
+  const service = new turndownServiceCtor({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
+  service.use(gfmPlugin)
+  return normalizeMarkdownTables(service.turndown(html))
 }
 
 const parseUploadedFileToMarkdown = async (file: File): Promise<string> => {
@@ -269,7 +315,8 @@ const parseUploadedFileToMarkdown = async (file: File): Promise<string> => {
 
   if (ext === '.html' || ext === '.htm') {
     const html = await file.text()
-    return normalizeMarkdownTables(turndown.turndown(html))
+    const service = await ensureTurndownService()
+    return normalizeMarkdownTables(service.turndown(html))
   }
 
   if (ext === '.json') {
@@ -356,9 +403,25 @@ const toggleFullscreen = () => {
 const placeholderText =
   '請輸入 Markdown 文本，例如：\n# 這是標題一\n\n這是一段 **粗體** 和 *斜體* 的文本。\n\n* 列表項目一\n* 列表項目二\n\n```javascript\n// 這是程式碼區塊\nconsole.log("Hello world");\n```\n\n[Google 連結](https://www.google.com)'
 
-const htmlOutput = computed(() => {
-  const parsed = marked(markdownInput.value)
-  return typeof parsed === 'string' ? parsed : ''
+const htmlOutput = ref('')
+
+const updateHtmlOutput = async () => {
+  try {
+    const { markedLib: activeMarked } = await loadMarkdownDependencies()
+    if (!activeMarked) {
+      htmlOutput.value = ''
+      return
+    }
+
+    const parsed = await activeMarked(markdownInput.value)
+    htmlOutput.value = typeof parsed === 'string' ? parsed : ''
+  } catch {
+    htmlOutput.value = ''
+  }
+}
+
+watch(markdownInput, () => {
+  void updateHtmlOutput()
 })
 
 const handleSaveCurrent = () => {
@@ -401,6 +464,9 @@ onBeforeUnmount(() => {
 })
 
 onMounted(() => {
+  void updateHtmlOutput()
+  void ensureTurndownService()
+
   if (isLocalRuntime.value) {
     usePythonApi.value = true
     void checkPythonApiAvailability()

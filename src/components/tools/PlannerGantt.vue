@@ -1,7 +1,28 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import * as XLSX from 'xlsx'
-import { toPng } from 'html-to-image'
+
+let xlsxModule: typeof import('xlsx') | null = null
+let htmlToImageModule: typeof import('html-to-image') | null = null
+
+type PlannerWorkbook = Awaited<ReturnType<typeof import('xlsx').read>>
+
+const ensureXlsxModule = async () => {
+  if (xlsxModule) {
+    return xlsxModule
+  }
+
+  xlsxModule = await import('xlsx')
+  return xlsxModule
+}
+
+const ensureHtmlToImageModule = async () => {
+  if (htmlToImageModule) {
+    return htmlToImageModule
+  }
+
+  htmlToImageModule = await import('html-to-image')
+  return htmlToImageModule
+}
 
 interface PlannerTask {
   id: string
@@ -21,6 +42,9 @@ interface PlannerTask {
   completedDate: Date | null
   createdDate: Date | null
   checklistItems: PlannerChecklistItem[]
+  sortStartMs: number
+  sortEndMs: number
+  sortName: string
 }
 
 interface PlannerChecklistItem {
@@ -149,7 +173,7 @@ const formatDateIso = (value: Date | null) => {
   return `${year}-${month}-${day}`
 }
 
-const parseDateCell = (value: unknown): Date | null => {
+const parseDateCell = async (value: unknown): Promise<Date | null> => {
   if (value === null || value === undefined || value === '') {
     return null
   }
@@ -159,7 +183,8 @@ const parseDateCell = (value: unknown): Date | null => {
   }
 
   if (typeof value === 'number') {
-    const parsed = XLSX.SSF.parse_date_code(value)
+    const xlsx = await ensureXlsxModule()
+    const parsed = xlsx.SSF.parse_date_code(value)
     if (parsed) {
       return safeDate(new Date(parsed.y, parsed.m - 1, parsed.d))
     }
@@ -441,7 +466,8 @@ const readCellByCandidates = (row: unknown[], map: Map<string, number>, keys: st
   return ''
 }
 
-const parseChecklistSheet = (workbook: XLSX.WorkBook) => {
+const parseChecklistSheet = async (workbook: PlannerWorkbook) => {
+  const xlsx = await ensureXlsxModule()
   const checklistSheetName = workbook.SheetNames.find((name) => name.includes('檢查清單'))
     ?? workbook.SheetNames.find((name) => name.toLowerCase().includes('checklist'))
 
@@ -451,7 +477,7 @@ const parseChecklistSheet = (workbook: XLSX.WorkBook) => {
   }
 
   const checklistSheet = workbook.Sheets[checklistSheetName]
-  const matrix = XLSX.utils.sheet_to_json<unknown[]>(checklistSheet, {
+  const matrix = xlsx.utils.sheet_to_json<unknown[]>(checklistSheet, {
     header: 1,
     blankrows: false,
     raw: true,
@@ -501,7 +527,8 @@ const parseChecklistSheet = (workbook: XLSX.WorkBook) => {
   return checklistMap
 }
 
-const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
+const parsePlannerWorkbook = async (workbook: PlannerWorkbook) => {
+  const xlsx = await ensureXlsxModule()
   const worksheetName = workbook.SheetNames.find((name) => name === '工作')
     ?? workbook.SheetNames.find((name) => name === '合併資料')
 
@@ -510,7 +537,7 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
   }
 
   const worksheet = workbook.Sheets[worksheetName]
-  const matrix = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+  const matrix = xlsx.utils.sheet_to_json<unknown[]>(worksheet, {
     header: 1,
     blankrows: false,
     raw: true,
@@ -528,7 +555,7 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
 
   const headerMap = toHeaderIndex(headerRow)
   const departmentColumnIndexes = getDepartmentColumnIndexes(headerRow)
-  const checklistMap = parseChecklistSheet(workbook)
+  const checklistMap = await parseChecklistSheet(workbook)
 
   const requiredKeys = ['工作識別碼', '工作名稱', '貯體', '狀態', '到期日', '開始日期']
   const missingKeys = requiredKeys.filter((key) => !headerMap.has(key))
@@ -541,7 +568,7 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
   let bucketOrderIndex = 0
   const bucketSheet = workbook.Sheets['貯體']
   if (bucketSheet) {
-    const bucketRows = XLSX.utils.sheet_to_json<unknown[]>(bucketSheet, {
+    const bucketRows = xlsx.utils.sheet_to_json<unknown[]>(bucketSheet, {
       header: 1,
       blankrows: false,
       raw: true,
@@ -569,7 +596,7 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
   const userNameMap = new Map<string, string>()
   const userSheet = workbook.Sheets['使用者']
   if (userSheet) {
-    const userRows = XLSX.utils.sheet_to_json<unknown[]>(userSheet, {
+    const userRows = xlsx.utils.sheet_to_json<unknown[]>(userSheet, {
       header: 1,
       blankrows: false,
       raw: true,
@@ -598,50 +625,61 @@ const parsePlannerWorkbook = (workbook: XLSX.WorkBook) => {
     }
   }
 
-  const parsedTasks: PlannerTask[] = rows
-    .filter((row) => Array.isArray(row) && row.some((cell) => normalizeText(cell) !== ''))
-    .map((row) => {
-      const sourceTaskId = normalizeText(readCell(row, headerMap, '工作識別碼'))
-      const name = normalizeText(readCell(row, headerMap, '工作名稱'))
-      const bucketRaw = normalizeText(readCell(row, headerMap, '貯體'))
-      const departments = parseDepartmentTagsFromRow(row, headerMap, departmentColumnIndexes)
-      const status = normalizeText(readCell(row, headerMap, '狀態'))
-      const priority = normalizeText(readCell(row, headerMap, '優先順序'))
-      const assigneeRaw = normalizeText(readCell(row, headerMap, '指派至'))
-      const createdByRaw = normalizeText(readCell(row, headerMap, '建立者'))
-      const notes = normalizeText(readCell(row, headerMap, '記事'))
-      const checklistRaw = normalizeText(readCell(row, headerMap, '檢查清單項目'))
-      const startDate = parseDateCell(readCell(row, headerMap, '開始日期'))
-      const dueDate = parseDateCell(readCell(row, headerMap, '到期日'))
-      const completedDate = parseDateCell(readCell(row, headerMap, '完成日期'))
-      const createdDate = parseDateCell(readCell(row, headerMap, '建立日期'))
-      const checklistFromRow = splitChecklistText(checklistRaw).map((title) => ({
-        id: createTaskId(),
-        title,
-        completed: false,
-      }))
-      const checklistItems = checklistMap.get(sourceTaskId) ?? checklistFromRow
+  const parsedTasks: PlannerTask[] = await Promise.all(
+    rows
+      .filter((row) => Array.isArray(row) && row.some((cell) => normalizeText(cell) !== ''))
+      .map(async (row) => {
+        const sourceTaskId = normalizeText(readCell(row, headerMap, '工作識別碼'))
+        const name = normalizeText(readCell(row, headerMap, '工作名稱'))
+        const bucketRaw = normalizeText(readCell(row, headerMap, '貯體'))
+        const departments = parseDepartmentTagsFromRow(row, headerMap, departmentColumnIndexes)
+        const status = normalizeText(readCell(row, headerMap, '狀態'))
+        const priority = normalizeText(readCell(row, headerMap, '優先順序'))
+        const assigneeRaw = normalizeText(readCell(row, headerMap, '指派至'))
+        const createdByRaw = normalizeText(readCell(row, headerMap, '建立者'))
+        const notes = normalizeText(readCell(row, headerMap, '記事'))
+        const checklistRaw = normalizeText(readCell(row, headerMap, '檢查清單項目'))
+        const startDate = await parseDateCell(readCell(row, headerMap, '開始日期'))
+        const dueDate = await parseDateCell(readCell(row, headerMap, '到期日'))
+        const completedDate = await parseDateCell(readCell(row, headerMap, '完成日期'))
+        const createdDate = await parseDateCell(readCell(row, headerMap, '建立日期'))
+        const checklistFromRow = splitChecklistText(checklistRaw).map((title) => ({
+          id: createTaskId(),
+          title,
+          completed: false,
+        }))
+        const checklistItems = checklistMap.get(sourceTaskId) ?? checklistFromRow
+        const task: PlannerTask = {
+          id: sourceTaskId || createTaskId(),
+          name: name || '(未命名工作)',
+          bucketId: bucketRaw,
+          bucketName: bucketNameMap.get(bucketRaw) ?? bucketRaw ?? '未分類',
+          departments,
+          status,
+          priority,
+          assigneeId: assigneeRaw,
+          assignee: resolveUserDisplayName(assigneeRaw, userNameMap),
+          createdById: createdByRaw,
+          createdBy: resolveUserDisplayName(createdByRaw, userNameMap),
+          notes,
+          startDate,
+          dueDate,
+          completedDate,
+          createdDate,
+          checklistItems,
+          sortStartMs: 0,
+          sortEndMs: 0,
+          sortName: '',
+        }
 
-      return {
-        id: sourceTaskId || createTaskId(),
-        name: name || '(未命名工作)',
-        bucketId: bucketRaw,
-        bucketName: bucketNameMap.get(bucketRaw) ?? bucketRaw ?? '未分類',
-        departments,
-        status,
-        priority,
-        assigneeId: assigneeRaw,
-        assignee: resolveUserDisplayName(assigneeRaw, userNameMap),
-        createdById: createdByRaw,
-        createdBy: resolveUserDisplayName(createdByRaw, userNameMap),
-        notes,
-        startDate,
-        dueDate,
-        completedDate,
-        createdDate,
-        checklistItems,
-      }
-    })
+        const derivedMeta = buildTaskDerivedMeta(task)
+        task.sortStartMs = derivedMeta.start.getTime()
+        task.sortEndMs = derivedMeta.end.getTime()
+        task.sortName = task.name.trim().toLowerCase()
+
+        return task
+      }),
+  )
 
   if (parsedTasks.length === 0) {
     throw new Error('沒有找到可顯示的工作資料。')
@@ -683,8 +721,9 @@ const handleFileImport = async (event: Event) => {
     }
 
     const data = await file.arrayBuffer()
-    const workbook = XLSX.read(data, { type: 'array', cellDates: true })
-    parsePlannerWorkbook(workbook)
+    const xlsx = await ensureXlsxModule()
+    const workbook = xlsx.read(data, { type: 'array', cellDates: true })
+    await parsePlannerWorkbook(workbook)
     successMessage.value = `已成功匯入 ${tasks.value.length} 筆工作。`
   } catch (error) {
     if (error instanceof Error) {
@@ -756,17 +795,17 @@ const groupedTasks = computed(() => {
     .map(([bucketName, items]) => ({
       bucketName,
       items: items.sort((a, b) => {
-        const startDiff = getTaskStart(a).getTime() - getTaskStart(b).getTime()
+        const startDiff = a.sortStartMs - b.sortStartMs
         if (startDiff !== 0) {
           return startDiff
         }
 
-        const endDiff = getTaskEnd(a).getTime() - getTaskEnd(b).getTime()
+        const endDiff = a.sortEndMs - b.sortEndMs
         if (endDiff !== 0) {
           return endDiff
         }
 
-        return a.name.localeCompare(b.name, 'zh-Hant')
+        return a.sortName.localeCompare(b.sortName, 'zh-Hant')
       }),
     }))
 })
@@ -1203,6 +1242,7 @@ const createOverviewImageDataUrl = async () => {
     throw new Error('找不到 Overview 區塊。')
   }
 
+  const { toPng } = await ensureHtmlToImageModule()
   return toPng(overviewRef.value, {
     pixelRatio: 2,
     cacheBust: true,
@@ -1217,6 +1257,7 @@ const createCurrentViewImageDataUrl = async () => {
 
   const captureWidth = ganttCaptureRef.value.scrollWidth
   const captureHeight = ganttCaptureRef.value.scrollHeight
+  const { toPng } = await ensureHtmlToImageModule()
 
   return toPng(ganttCaptureRef.value, {
     pixelRatio: 2,
@@ -1260,7 +1301,7 @@ const downloadOverviewImage = (dataUrl: string) => {
   document.body.removeChild(link)
 }
 
-const exportGanttWorkbook = () => {
+const exportGanttWorkbook = async () => {
   overviewMessage.value = ''
 
   if (tasks.value.length === 0) {
@@ -1269,7 +1310,8 @@ const exportGanttWorkbook = () => {
   }
 
   try {
-    const workbook = XLSX.utils.book_new()
+    const xlsx = await ensureXlsxModule()
+    const workbook = xlsx.utils.book_new()
     const visibleTaskIdSet = new Set(filteredTasks.value.map((task) => task.id))
     const exportTimeIso = new Date().toISOString()
     const rows = tasks.value.map((task, index) => {
@@ -1305,10 +1347,10 @@ const exportGanttWorkbook = () => {
       }
     })
 
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), 'GanttFlat')
+    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(rows), 'GanttFlat')
 
     const dateTag = new Date().toISOString().slice(0, 10)
-    XLSX.writeFile(workbook, `planner-gantt-flat-${dateTag}.xlsx`)
+    xlsx.writeFile(workbook, `planner-gantt-flat-${dateTag}.xlsx`)
     overviewMessage.value = '單頁甘特圖 Excel 已匯出，可直接用樞紐分析。'
   } catch (error) {
     if (error instanceof Error) {
