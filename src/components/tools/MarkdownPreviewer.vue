@@ -12,6 +12,17 @@ let mammothLib: typeof MammothModule | null = null
 let turndownServiceCtor: typeof TurndownClass | null = null
 let gfmPlugin: typeof GfmPlugin | null = null
 let xlsxLib: typeof XlsxModule | null = null
+type PrettierFormatOptions = {
+  parser: 'markdown'
+  plugins: unknown[]
+  proseWrap: 'preserve'
+  printWidth: number
+  tabWidth: number
+  useTabs: boolean
+}
+type MarkdownPrettierFormatter = (source: string, options: PrettierFormatOptions) => string | Promise<string>
+let prettierFormat: MarkdownPrettierFormatter | null = null
+let prettierMarkdownPlugin: unknown = null
 
 const loadMarkdownDependencies = async () => {
   if (markedLib && mammothLib && turndownServiceCtor && gfmPlugin && xlsxLib) {
@@ -40,6 +51,7 @@ const historyStore = useHistoryStore()
 
 const markdownInput = ref('')
 const saveStatus = ref<'none' | 'saved'>('none')
+const isFormattingMarkdown = ref(false)
 const errorMessage = ref('')
 const isFullscreen = ref(false)
 const selectedFileName = ref('')
@@ -109,6 +121,25 @@ const ensureTurndownService = async () => {
   service.use(gfmPlugin)
   turndown.value = service
   return service
+}
+
+const ensureMarkdownFormatter = async (): Promise<{ prettierFormat: MarkdownPrettierFormatter; prettierMarkdownPlugin: unknown }> => {
+  if (prettierFormat && prettierMarkdownPlugin) {
+    return { prettierFormat, prettierMarkdownPlugin }
+  }
+
+  const [prettierStandaloneModule, prettierMarkdownModule] = await Promise.all([
+    import('prettier/standalone'),
+    import('prettier/plugins/markdown'),
+  ])
+
+  const loadedPrettierFormat = prettierStandaloneModule.format as MarkdownPrettierFormatter
+  const loadedPrettierMarkdownPlugin = prettierMarkdownModule.default ?? prettierMarkdownModule
+
+  prettierFormat = loadedPrettierFormat
+  prettierMarkdownPlugin = loadedPrettierMarkdownPlugin
+
+  return { prettierFormat: loadedPrettierFormat, prettierMarkdownPlugin: loadedPrettierMarkdownPlugin }
 }
 
 const handleMarkdownPaste = async (event: ClipboardEvent) => {
@@ -456,6 +487,47 @@ const handleConvertInlineHtmlTables = () => {
   parseStatus.value = '已將輸入內容中的 HTML table 轉為 Markdown 表格。'
 }
 
+const handleFormatMarkdown = async () => {
+  errorMessage.value = ''
+  parseStatus.value = ''
+
+  if (markdownInput.value.trim() === '') {
+    errorMessage.value = '尚無可格式化內容，請先輸入 Markdown。'
+    return
+  }
+
+  isFormattingMarkdown.value = true
+
+  try {
+    const { prettierFormat, prettierMarkdownPlugin } = await ensureMarkdownFormatter()
+    const formatted = await prettierFormat(markdownInput.value, {
+      parser: 'markdown',
+      plugins: [prettierMarkdownPlugin],
+      proseWrap: 'preserve',
+      printWidth: 100,
+      tabWidth: 2,
+      useTabs: false,
+    })
+
+    if (formatted === markdownInput.value) {
+      parseStatus.value = '內容已符合格式。'
+      return
+    }
+
+    markdownInput.value = formatted
+    saveStatus.value = 'none'
+    parseStatus.value = '已完成 Markdown 格式化。'
+  } catch (error) {
+    if (error instanceof Error) {
+      errorMessage.value = `Markdown 格式化失敗：${error.message}`
+    } else {
+      errorMessage.value = 'Markdown 格式化失敗：未知錯誤。'
+    }
+  } finally {
+    isFormattingMarkdown.value = false
+  }
+}
+
 onBeforeUnmount(() => {
   if (saveStatusTimer) {
     clearTimeout(saveStatusTimer)
@@ -528,6 +600,15 @@ onMounted(() => {
     </p>
 
     <div style="display: flex; gap: 10px; align-items: center">
+      <button
+        @click="handleFormatMarkdown"
+        class="tool-button"
+        style="--tool-button-bg: #6a1b9a"
+        :disabled="isFormattingMarkdown"
+      >
+        {{ isFormattingMarkdown ? '格式化中...' : '格式化 Markdown' }}
+      </button>
+
       <button
         @click="handleConvertInlineHtmlTables"
         class="tool-button"

@@ -17,6 +17,7 @@ const selectedFileName = ref('')
 const errorMessage = ref('')
 const isParsing = ref(false)
 const headerRowNumber = ref(1)
+const dataStartRowNumber = ref(2)
 const parsedHeaders = ref<string[]>([])
 const parsedRows = ref<string[][]>([])
 const selectedMainColumnKeys = ref<string[]>([])
@@ -166,6 +167,11 @@ const getSafeHeaderRowIndex = () => {
   return Math.max(1, normalized) - 1
 }
 
+const getSafeDataStartRowIndex = () => {
+  const normalized = Number.isFinite(dataStartRowNumber.value) ? Math.trunc(dataStartRowNumber.value) : 2
+  return Math.max(1, normalized) - 1
+}
+
 const ensureSupportedFile = (file: File) => {
   const lowerName = file.name.toLowerCase()
   if (lowerName.endsWith('.csv') || lowerName.endsWith('.xlsx')) {
@@ -221,8 +227,14 @@ const parseFileForBrowsing = async () => {
     }
 
     const headerRowIndex = getSafeHeaderRowIndex()
+    const dataStartRowIndex = getSafeDataStartRowIndex()
+
+    if (dataStartRowIndex <= headerRowIndex) {
+      throw new Error(`資料列號需大於表頭列號（目前表頭：第 ${headerRowIndex + 1} 列）。`)
+    }
+
     const headerRow = matrix[headerRowIndex]
-    const bodyRows = matrix.slice(headerRowIndex + 1)
+    const bodyRows = matrix.slice(dataStartRowIndex)
 
     if (!Array.isArray(headerRow) || headerRow.length === 0) {
       throw new Error(`缺少欄位列，請確認第 ${headerRowIndex + 1} 列為欄位名稱。`)
@@ -467,7 +479,7 @@ const updateDetailColumns = () => {
 <template>
   <div style="padding: 20px; width: 100%; box-sizing: border-box">
     <h2>CSV/XLSX Parser</h2>
-    <p style="margin-bottom: 15px">上傳 csv 或 xlsx，分頁瀏覽資料表格；支援自訂第幾列作為表頭、關鍵字搜尋（符合列黃底標記）、單筆編輯與刪除（含刪除前預覽確認）；可設定分隔符號後匯出 json、csv、txt，匯出以畫面最後呈現資料為準。</p>
+    <p style="margin-bottom: 15px">上傳 csv 或 xlsx，分頁瀏覽資料表格；支援自訂第幾列作為表頭與資料起始列、關鍵字搜尋（符合列黃底標記）、單筆編輯與刪除（含刪除前預覽確認）；可設定分隔符號後匯出 json、csv、txt，匯出以畫面最後呈現資料為準。</p>
 
     <p
       v-if="errorMessage"
@@ -487,6 +499,16 @@ const updateDetailColumns = () => {
         表頭列號
         <input
           v-model.number="headerRowNumber"
+          type="number"
+          min="1"
+          step="1"
+          style="width: 88px; height: 32px; border: 1px solid #c8c8c8; border-radius: 6px; padding: 0 8px"
+        >
+      </label>
+      <label style="display: inline-flex; align-items: center; gap: 8px; color: #444; font-size: 13px">
+        資料列號
+        <input
+          v-model.number="dataStartRowNumber"
           type="number"
           min="1"
           step="1"
