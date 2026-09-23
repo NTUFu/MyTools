@@ -292,13 +292,57 @@ const handleTextareaScroll = (event: Event) => {
   lineNumberContainer.value.scrollTop = target.scrollTop
 }
 
+const parseJsonDocument = (source: string): unknown => {
+  try {
+    return JSON.parse(source) as unknown
+  } catch (directError) {
+    try {
+      const decodedJson = JSON.parse(`"${source}"`)
+      return JSON.parse(decodedJson) as unknown
+    } catch {
+      throw directError
+    }
+  }
+}
+
+const parseNestedJsonValues = (value: unknown): unknown => {
+  if (typeof value === 'string') {
+    const trimmedValue = value.trim()
+    if (!trimmedValue.startsWith('{') && !trimmedValue.startsWith('[')) {
+      return value
+    }
+
+    try {
+      const nestedValue = parseJsonDocument(value)
+      if (nestedValue !== null && typeof nestedValue === 'object') {
+        return parseNestedJsonValues(nestedValue)
+      }
+    } catch {
+    }
+    return value
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => parseNestedJsonValues(item))
+  }
+
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, parseNestedJsonValues(item)]),
+    )
+  }
+
+  return value
+}
+
 const parseJson = (): unknown | null => {
   if (jsonInput.value.trim() === '') {
     return null
   }
 
   try {
-    const parsed = JSON.parse(jsonInput.value) as unknown
+    const parsed = parseNestedJsonValues(parseJsonDocument(jsonInput.value))
+
     parsedJson.value = parsed
     hasJsonSyntaxError.value = false
     errorLineNumber.value = null
