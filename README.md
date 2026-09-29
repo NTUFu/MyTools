@@ -116,6 +116,27 @@ uvicorn app:app --host 127.0.0.1 --port 8000 --reload
 
 ---
 
+## 🤖 本機 AI 功能
+
+AI 功能是可選的本機擴充，不影響各工具原有功能。請在專案根目錄執行 `npm run dev:local`，再由側邊欄開啟「AI 設定」並啟用 AI。AI 設定與 API 僅限 `localhost`、`127.0.0.1` 等 loopback 位址；GitHub Pages 與其他主機不會顯示設定，FastAPI 也會拒絕非本機請求。
+
+### Provider 設定
+
+可選 Gemini、OpenAI、Anthropic 或自訂 OpenAI-compatible API，設定 Model、API Key 與 Endpoint，並測試連線。API Key 只保留在目前瀏覽器分頁的記憶體中，不存入 `localStorage`；關閉或重新載入分頁後需重新輸入。連線測試與 AI 操作會實際呼叫所選模型，可能產生供應商費用。
+
+### 目前支援的工具
+
+- **Regex Tester**：依文字描述產生 Regex、解釋 Regex、建議測試案例。只傳需求描述或 Pattern／Flags，不傳測試文字或上傳檔案內容；產生結果需先通過 Regex 語法檢查，再由使用者手動套用。
+- **SQL Practice**：依目前 Schema 與需求產生唯讀 SQL 草稿，或解釋目前 SQL。不傳匯入資料列；SQL 草稿需手動套用，再由使用者按「執行 SQL」交給瀏覽器內的 sql.js 執行。
+
+所有 AI 操作都需使用者明確點擊才會送出資料。AI 回覆是建議草稿，不會自動執行或取代原有工具結果。
+
+### 用量與隱私
+
+本機用量統計記錄請求數、Token、工具與操作類型等 metadata，保存在 `python_api/mytools_ai_usage.sqlite3`；不記錄 Prompt、工具資料或 API Key。資料庫檔案不納入 Git。費用僅在使用者填入每百萬 Token 費率且 Provider 有回傳 Token 用量時估算，實際費用以供應商帳單為準。
+
+---
+
 ## 🧪 常用指令
 
 請在專案根目錄執行：

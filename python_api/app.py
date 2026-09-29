@@ -8,16 +8,20 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from markitdown import MarkItDown
 
+from ai_routes import router as ai_router
+
 app = FastAPI(title='MyTools MarkItDown API', version='1.0.0')
 
-# Keep CORS permissive for local development; tighten this if exposed publicly.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
-    allow_credentials=True,
+    allow_origins=[],
+    allow_origin_regex=r'^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$',
+    allow_credentials=False,
     allow_methods=['*'],
-    allow_headers=['*'],
+    allow_headers=['content-type'],
 )
+
+app.include_router(ai_router)
 
 md = MarkItDown(enable_plugins=False)
 

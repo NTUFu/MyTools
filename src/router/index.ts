@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Content from '../components/Content.vue'
+import { isLocalAiAvailable } from '../utils/localAi'
 
 const Base64Tool = () => import('../components/tools/base64.vue')
 const JsonFormatter = () => import('../components/tools/JsonFormatter.vue')
@@ -22,6 +23,7 @@ const PomodoroTimer = () => import('../components/tools/PomodoroTimer.vue')
 const SqlPractice = () => import('../components/tools/SqlPractice.vue')
 const HiddenCharacters = () => import('../components/tools/HiddenCharacters.vue')
 const HistoryPage = () => import('../components/History.vue')
+const AiSettings = () => import('../components/AiSettings.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -48,6 +50,7 @@ const router = createRouter({
     { path: '/tools/sql-practice', component: SqlPractice },
     { path: '/tools/hidden-characters', component: HiddenCharacters },
     { path: '/history', component: HistoryPage },
+    { path: '/settings/ai', component: AiSettings, meta: { localOnly: true } },
     { path: '/tools/MarkdownPreviewer', redirect: '/tools/markdown-previewer' },
     { path: '/tools/QRious', redirect: '/tools/qrious' },
     { path: '/tools/HashGenerator', redirect: '/tools/hash-generator' },
@@ -59,6 +62,12 @@ const router = createRouter({
     { path: '/tools/UuidUlidGenerator', redirect: '/tools/uuid-ulid-generator' },
     { path: '/tools/PomodoroTimer', redirect: '/tools/pomodoro-timer' },
   ],
+})
+
+router.beforeEach((to) => {
+  if (to.meta.localOnly && !isLocalAiAvailable()) {
+    return { path: '/', replace: true }
+  }
 })
 
 export default router

@@ -4,6 +4,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { Bars3Icon, ChevronDownIcon, ChevronUpIcon } from '@heroicons/vue/24/outline'
 import { useUiStore } from '../stores/ui'
+import { isLocalAiAvailable } from '../utils/localAi'
 
 interface NavItem {
   id: number
@@ -43,6 +44,7 @@ const navItems: NavItem[] = [
     ],
   },
   { id: 3, text: 'History', shortText: 'H', path: '/history' },
+  ...(isLocalAiAvailable() ? [{ id: 4, text: 'AI 設定', shortText: 'AI', path: '/settings/ai' }] : []),
 ]
 
 const route = useRoute()

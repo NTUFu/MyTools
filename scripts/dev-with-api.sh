@@ -100,7 +100,7 @@ select_python_cmd() {
 }
 
 ensure_python_deps() {
-  if "$PYTHON_BIN" -c "import fastapi, uvicorn, markitdown" >/dev/null 2>&1; then
+  if "$PYTHON_BIN" -c "import fastapi, uvicorn, markitdown, httpx" >/dev/null 2>&1; then
     return
   fi
 

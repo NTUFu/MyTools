@@ -32,4 +32,5 @@ material/
 python_api/.venv/
 python_api/__pycache__/
 python_api/*.pyc
+python_api/mytools_ai_usage.sqlite3
 reference/*

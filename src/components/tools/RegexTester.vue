@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useHistoryStore } from '../../stores/history'
+import { aiIsReady, generateAiText, refreshAiRuntimeConfig } from '../../utils/aiClient'
+import { isLocalAiAvailable } from '../../utils/localAi'
 
 type CopyTarget = 'none' | 'matches' | 'replace'
 
@@ -24,6 +26,12 @@ const fileName = ref('')
 const regexError = ref('')
 const copyStatus = ref<CopyTarget>('none')
 const saveStatus = ref<'none' | 'saved'>('none')
+const aiDescription = ref('')
+const aiResult = ref('')
+const aiError = ref('')
+const aiAction = ref<'generate' | 'explain' | 'examples' | null>(null)
+const aiIsLocal = isLocalAiAvailable()
+let activeAiRequest: AbortController | null = null
 
 let copyTimer: ReturnType<typeof setTimeout> | null = null
 let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -114,6 +122,92 @@ const matches = computed<MatchItem[]>(() => {
   return result
 })
 
+const getSuggestedRegex = (): { pattern: string; flags: string } | null => {
+  const fenced = aiResult.value.match(/```(?:regex|regexp|javascript|js)?\s*([\s\S]*?)```/i)?.[1]?.trim()
+  const candidate = (fenced || aiResult.value.trim().split('\n')[0] || '').trim()
+  const literal = candidate.match(/^\/([\s\S]*)\/([dgimsuvy]*)$/)
+  if (!literal) {
+    return null
+  }
+
+  const allowedFlags = new Set(['g', 'i', 'm', 's', 'u', 'y'])
+  const suggestedFlags = Array.from(new Set(literal[2])).filter((flag) => allowedFlags.has(flag)).join('')
+  try {
+    new RegExp(literal[1], suggestedFlags)
+    return { pattern: literal[1], flags: suggestedFlags }
+  } catch {
+    return null
+  }
+}
+
+const suggestedRegex = computed(getSuggestedRegex)
+
+const requestRegexAi = async (action: 'generate' | 'explain' | 'examples') => {
+  refreshAiRuntimeConfig()
+  aiError.value = ''
+  aiResult.value = ''
+
+  if (action === 'generate' && aiDescription.value.trim() === '') {
+    aiError.value = '請先描述要匹配的內容。'
+    return
+  }
+  if (action !== 'generate' && pattern.value.trim() === '') {
+    aiError.value = '請先輸入要分析的 Regex。'
+    return
+  }
+
+  let prompt = ''
+  let context = ''
+  if (action === 'generate') {
+    prompt = '依據使用者提供的需求，產生一個 JavaScript 正則表達式。只回傳一個 JavaScript regex literal（含 /pattern/flags），不要 Markdown、說明或其他文字。請選用必要且本工具支援的 flags（g、i、m、s、u、y）。'
+    context = `需求描述：\n${aiDescription.value.trim()}`
+  } else if (action === 'explain') {
+    prompt = '請用繁體中文解釋這個 JavaScript 正則表達式的用途、各部分意義、flags、可能的邊界條件，以及一個簡短例子。若 regex 無效，指出可能原因；不要假稱已執行測試。'
+    context = `Pattern：${pattern.value}\nFlags：${normalizedFlags.value}`
+  } else {
+    prompt = '請用繁體中文為這個 JavaScript 正則表達式提供 3 個精簡測試案例，每個案例標示預期符合或不符合，並說明原因。不要宣稱已在程式中執行。'
+    context = `Pattern：${pattern.value}\nFlags：${normalizedFlags.value}`
+  }
+
+  const controller = new AbortController()
+  activeAiRequest = controller
+  aiAction.value = action
+  try {
+    const result = await generateAiText({
+      tool: 'regex-tester',
+      action: `regex-${action}`,
+      prompt,
+      context,
+      signal: controller.signal,
+    })
+    aiResult.value = result.text
+  } catch (error) {
+    aiError.value = error instanceof Error
+      ? error.name === 'AbortError' ? '已取消 AI 請求。' : error.message
+      : 'AI 請求失敗。'
+  } finally {
+    if (activeAiRequest === controller) {
+      activeAiRequest = null
+      aiAction.value = null
+    }
+  }
+}
+
+const cancelRegexAi = () => {
+  activeAiRequest?.abort()
+}
+
+const applySuggestedRegex = () => {
+  if (!suggestedRegex.value) {
+    return
+  }
+  pattern.value = suggestedRegex.value.pattern
+  flags.value = suggestedRegex.value.flags || 'g'
+  replaceOutput.value = ''
+  regexError.value = ''
+  saveStatus.value = 'none'
+}
+
 const handleRunReplace = () => {
   saveStatus.value = 'none'
 
@@ -183,6 +277,9 @@ const handleClear = () => {
   regexError.value = ''
   copyStatus.value = 'none'
   saveStatus.value = 'none'
+  aiDescription.value = ''
+  aiResult.value = ''
+  aiError.value = ''
 }
 
 const handleFileUpload = (event: Event) => {
@@ -217,6 +314,7 @@ const handleFileUpload = (event: Event) => {
 }
 
 onBeforeUnmount(() => {
+  activeAiRequest?.abort()
   clearTimer('copy')
   clearTimer('save')
 })
@@ -244,6 +342,42 @@ onBeforeUnmount(() => {
       <span v-if="saveStatus === 'saved'" style="color: #2e7d32">✅ 已儲存</span>
       <span v-if="fileName" style="font-size: 0.9em; color: #666">檔案：{{ fileName }}</span>
     </div>
+
+    <section v-if="aiIsLocal" style="display: grid; gap: 10px; padding: 14px; border: 1px solid #c7d2fe; border-radius: 8px; background: #f8faff">
+      <div>
+        <strong>AI Regex 助手</strong>
+        <p style="margin: 5px 0 0; color: #64748b; font-size: 12px; line-height: 1.5">
+          只會傳送需求描述，或目前的 Pattern 與 Flags；不會傳送測試文字或上傳檔案內容。AI 結果需自行檢查。
+        </p>
+      </div>
+      <textarea
+        v-model="aiDescription"
+        rows="2"
+        maxlength="4000"
+        placeholder="描述要匹配的內容，例如：台灣手機號碼，允許 +886 前綴"
+        style="width: 100%; box-sizing: border-box; padding: 9px; border: 1px solid #cbd5e1; border-radius: 6px; resize: vertical"
+      />
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center">
+        <button class="tool-button tool-button--compact" type="button" :disabled="!aiIsReady || aiAction !== null" @click="requestRegexAi('generate')">
+          {{ aiAction === 'generate' ? '產生中…' : '依描述產生 Regex' }}
+        </button>
+        <button class="tool-button tool-button--compact" type="button" :disabled="!aiIsReady || aiAction !== null || !pattern.trim()" @click="requestRegexAi('explain')">
+          {{ aiAction === 'explain' ? '解釋中…' : '解釋目前 Regex' }}
+        </button>
+        <button class="tool-button tool-button--compact" type="button" :disabled="!aiIsReady || aiAction !== null || !pattern.trim()" @click="requestRegexAi('examples')">
+          {{ aiAction === 'examples' ? '產生中…' : '建議測試案例' }}
+        </button>
+        <button v-if="aiAction !== null" class="tool-button tool-button--compact" type="button" style="--tool-button-bg: #64748b" @click="cancelRegexAi">取消請求</button>
+        <RouterLink v-if="!aiIsReady" to="/settings/ai" style="font-size: 12px; color: #1d4ed8">前往 AI 設定</RouterLink>
+      </div>
+      <p v-if="aiError" role="status" style="margin: 0; color: #b91c1c; font-size: 13px">{{ aiError }}</p>
+      <div v-if="aiResult" style="display: grid; gap: 8px">
+        <pre style="max-height: 300px; margin: 0; overflow: auto; padding: 12px; border: 1px solid #dbe2ea; border-radius: 6px; background: #fff; color: #1f2937; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.55 Consolas, monospace">{{ aiResult }}</pre>
+        <button v-if="aiAction === null && suggestedRegex" class="tool-button tool-button--compact" type="button" style="justify-self: start; --tool-button-bg: #2563eb" @click="applySuggestedRegex">
+          將建議帶入 Pattern / Flags
+        </button>
+      </div>
+    </section>
 
     <div style="display: grid; grid-template-columns: minmax(220px, 2fr) minmax(120px, 1fr); gap: 8px">
       <input
