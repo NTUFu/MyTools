@@ -6,7 +6,7 @@ import JsonTreeNode from './JsonTreeNode.vue'
 const INDENT_SPACES = 2
 
 type CopyStatus = 'none' | 'copied'
-type JsonConversionAction = 'format' | 'minify'
+type JsonConversionAction = 'format' | 'minify' | 'schema'
 
 interface LastJsonConversion {
   action: JsonConversionAction
@@ -432,6 +432,88 @@ const handleMinify = () => {
   }
 }
 
+const SCHEMA_DESCRIPTION_PLACEHOLDER = '請填入欄位說明'
+
+const getSchemaType = (value: unknown): string => {
+  if (value === null) return 'null'
+  if (Array.isArray(value)) return 'array'
+  return typeof value
+}
+
+const buildFieldSchema = (value: unknown): Record<string, unknown> => {
+  const type = getSchemaType(value)
+
+  if (type === 'object') {
+    return {
+      type,
+      Required: true,
+      description: SCHEMA_DESCRIPTION_PLACEHOLDER,
+      properties: buildPropertiesSchema(value as Record<string, unknown>),
+    }
+  }
+
+  if (type === 'array') {
+    const arrayValue = value as unknown[]
+    return {
+      type,
+      Required: true,
+      description: SCHEMA_DESCRIPTION_PLACEHOLDER,
+      items: arrayValue.length > 0 ? buildFieldSchema(arrayValue[0]) : {},
+    }
+  }
+
+  return {
+    type,
+    Required: true,
+    description: SCHEMA_DESCRIPTION_PLACEHOLDER,
+    examples: [value],
+  }
+}
+
+const buildPropertiesSchema = (obj: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(obj).map(([key, value]) => [key, buildFieldSchema(value)]))
+
+const buildJsonSchema = (root: unknown): Record<string, unknown> => {
+  if (root !== null && !Array.isArray(root) && typeof root === 'object') {
+    return {
+      type: 'object',
+      properties: buildPropertiesSchema(root as Record<string, unknown>),
+    }
+  }
+
+  if (Array.isArray(root)) {
+    return {
+      type: 'array',
+      items: root.length > 0 ? buildFieldSchema(root[0]) : {},
+    }
+  }
+
+  return buildFieldSchema(root)
+}
+
+const handleGenerateSchema = () => {
+  prepareConversion()
+
+  if (jsonInput.value.trim() === '') {
+    return
+  }
+
+  const sourceJson = jsonInput.value
+  const parsedObject = parseJson()
+  if (hasJsonSyntaxError.value) {
+    return
+  }
+
+  const schemaJson = JSON.stringify(buildJsonSchema(parsedObject), null, INDENT_SPACES)
+  jsonInput.value = schemaJson
+  searchKeyword.value = ''
+  lastConversion.value = {
+    action: 'schema',
+    input: sourceJson,
+    output: schemaJson,
+  }
+}
+
 const handleClear = () => {
   jsonInput.value = ''
   resetInputState()
@@ -577,6 +659,14 @@ onBeforeUnmount(() => {
           style="--tool-button-bg: #008CBA"
         >
           壓縮 (Minify)
+        </button>
+
+        <button
+          @click="handleGenerateSchema"
+          class="tool-button"
+          style="--tool-button-bg: #9c27b0"
+        >
+          產生 JSON Schema
         </button>
 
         <button
