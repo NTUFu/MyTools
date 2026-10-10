@@ -25,6 +25,7 @@ const navItems: NavItem[] = [
       { id: 22, text: 'JSON Formatter', shortText: 'J', path: '/tools/json-formatter' },
       { id: 23, text: 'HTML Previewer', shortText: 'H', path: '/tools/html-previewer' },
       { id: 24, text: 'Markdown Previewer', shortText: 'M', path: '/tools/markdown-previewer' },
+      { id: 41, text: 'PDF 工具箱', shortText: 'P', path: '/tools/pdf-toolkit' },
       { id: 25, text: 'QRCode Previewer', shortText: 'Q', path: '/tools/qrious' },
       { id: 26, text: 'JWT Decoder', shortText: 'J', path: '/tools/jwt-decoder' },
       { id: 27, text: 'XSLT Compare', shortText: 'X', path: '/tools/xslt-diff' },

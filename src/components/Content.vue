@@ -116,6 +116,13 @@ const toolCards: ToolCard[] = [
     category: '內容預覽',
   },
   {
+    id: 'pdf-toolkit',
+    name: 'PDF 工具箱',
+    path: '/tools/pdf-toolkit',
+    description: '本機瀏覽 PDF、合併檔案與擷取頁碼範圍',
+    category: '內容預覽',
+  },
+  {
     id: 'xslt-diff',
     name: 'XSLT 比較器',
     path: '/tools/xslt-diff',

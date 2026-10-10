@@ -26,6 +26,7 @@
 - 支援本地開發、正式打包與靜態站預覽。
 - HTML 預覽器內建 CodeMirror 編輯器，提供行號與 HTML syntax highlighting，支援全屏預覽。
 - Markdown 預覽器支援檔案上傳解析（含 HTML 自動轉 Markdown）、即時渲染與全屏預覽。
+- PDF 工具箱支援本機瀏覽未加密 PDF、多檔合併與指定頁碼範圍擷取，不會上傳檔案。
 - CSV/XLSX Parser 支援自訂表頭列、關鍵字篩選、單筆編輯刪除，並可做主表/明細分組 JSON 匯出。
 - Planner Gantt 支援匯入 Microsoft Planner XLSX，產生可互動甘特圖與統計摘要。
 - Pomodoro Timer 支援自訂專注/休息參數、循環規則與無印良品風格專注計時介面。
@@ -265,6 +266,7 @@ npm version patch --no-git-tag-version
 | JSON Schema Validator | `/tools/json-schema-validator` | 驗證 JSON 是否符合 Schema，顯示錯誤 path/keyword/message，支援複製錯誤與儲存此次轉換                                                                                                                                                          |
 | HTML Previewer        | `/tools/html-previewer`        | CodeMirror HTML 編輯器（行號、syntax highlighting）、即時預覽、格式化 HTML、全屏預覽、儲存此次轉換                                                                                                                                            |
 | Markdown Previewer    | `/tools/markdown-previewer`    | 即時渲染、`marked` 解析、上傳檔案轉 Markdown（含 HTML 自動轉換）、可勾選優先使用本地 Python MarkItDown API（不可用時自動 fallback 前端解析）、顯示 MarkItDown 支援類型說明、HTML 渲染結果全屏預覽、儲存此次轉換                               |
+| PDF 工具箱            | `/tools/pdf-toolkit`           | 瀏覽未加密 PDF、調整頁碼與縮放；依清單順序合併多份 PDF，或擷取指定頁碼範圍下載；檔案僅於瀏覽器本機處理                                                                                                                                        |
 | CSV/XLSX Parser       | `/tools/csv-xlsx-to-json`      | 上傳 .csv / .xlsx 分頁瀏覽表格；關鍵字搜尋（符合列黃底標記、僅顯示符合列）；單筆編輯（儲存後即時反映）、單筆刪除（含資料預覽確認 Modal）；可設定分隔符號匯出 JSON / CSV / TXT，匯出以畫面最後呈現資料為準；行號欄凍結，編輯模式同時凍結操作欄 |
 | QRCode Previewer      | `/tools/qrious`                | 即時產生 QR Code、上傳圖片解碼、儲存此次轉換（編碼/解碼）                                                                                                                                                                                     |
 | XSLT 比較器           | `/tools/xslt-diff`             | 上傳或貼上兩份 XSLT / XML，逐行比較並以左右分割視圖高亮差異、儲存此次轉換                                                                                                                                                                     |
