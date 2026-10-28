@@ -6,14 +6,14 @@
 
 這是一個以 Vue 3 + TypeScript + Vite 建置的工具型 SPA，整合常用的開發與資料處理小工具。
 
-目前版本：`5.5.0`
+目前版本：`7.2.0`（以 [package.json](./package.json) 為準）
 
-## 🆕 近期更新（5.5.0）
+## 🆕 目前版本重點（7.2.0）
 
-- 多個工具頁已進行效能優化，將重型依賴改為按需載入，降低首屏與工具頁的初始化負擔。
-- CSV/XLSX Parser、Planner Gantt、QR Code 相關功能已優化依賴載入流程，避免不必要的資源一開始就被打包進來。
-- Planner Gantt 的資料處理與排序邏輯進一步整理，降低重複計算與渲染成本。
-- Markdown Previewer、HTML Previewer 等編輯器型工具的重型套件已延後載入，提升整體互動流暢度。
+- 共 21 個工具頁，使用路由獨立載入，支援直接開啟工具 URL。
+- 重型套件採按需載入，包含 PDF、XLSX、Markdown、CodeMirror、QR Code 與 SQL.js。
+- 提供瀏覽器本機處理的編碼、格式化、比較、預覽、資料處理與專案管理工具。
+- 可選擇啟用僅限本機的 Python MarkItDown API 與 AI 輔助功能。
 
 ---
 
@@ -36,23 +36,13 @@
 
 ## 🗺️ 未來規劃 (Roadmap)
 
-根據 `todo.md`，以下為規劃中或正在開發的功能：
+目前尚未實作、且仍記錄於 `todo.md` 的項目：
 
-### 高優先級
+- **Cron Expression Helper**：提供人類可讀描述與下次觸發時間。
+- **SQL Formatter**：支援 SQL 格式化與壓縮。
+- **JWT Decoder 強化**：加入簽章與 `aud`、`iss` 等 Claim 驗證。
 
-- **URL Encoder / Decoder**: 包含 `encodeURIComponent` 的完整支援。
-- **Unix Timestamp Converter**: 秒、毫秒與 ISO 時間格式互轉。
-- **UUID / ULID Generator**: 支援批次產生。
-- **Hash / HMAC Generator**: 支援 MD5, SHA-1, SHA-256。
-- **Regex Tester**: 即時測試表達式、預覽取代結果與捕獲組。
-- **Diff Compare**: 比較兩段文字的差異。
-
-### 次優先級
-
-- **JSON Schema Validator**: 驗證 JSON 是否符合指定的 Schema。
-- **Cron Expression Helper**: 提供人類可讀的描述與下次觸發時間。
-- **SQL Formatter**: 支援 SQL 的格式化與壓縮。
-- **JWT Decoder 強化**: 加入簽章與 Claim 驗證功能。
+`todo.md` 中原先列出的 URL、Timestamp、UUID/ULID、Hash、Regex、Diff 與 JSON Schema 工具均已完成，請以本 README 的「已實作工具」為準。
 
 ---
 
@@ -113,7 +103,19 @@ uvicorn app:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 前端開發環境已透過 Vite Proxy 對接 `/api/*` 到 `http://127.0.0.1:8000`。
-啟動後可用健康檢查確認：`GET http://127.0.0.1:8000/api/health`
+
+API 端點：
+
+- `GET /api/health`：確認 API 是否運作。
+- `GET /api/supported-types`：列出 MarkItDown 可處理的副檔名。
+- `POST /api/convert`：以 multipart 欄位 `file` 上傳檔案並取得 Markdown。
+- `POST /api/ai/test`：測試 AI Provider 連線（僅 loopback）。
+- `GET /api/ai/status`：取得本機 AI 功能狀態（僅 loopback）。
+- `POST /api/ai/generate`：執行 AI 輔助產生文字（僅 loopback）。
+- `GET /api/ai/usage`：查看本機 AI 用量摘要（僅 loopback）。
+- `DELETE /api/ai/usage`：清除本機 AI 用量（僅 loopback）。
+
+AI 端點要求請求 Host、Client 與 Origin 均為 loopback；非本機 HTTP Endpoint 也必須使用 HTTPS。
 
 ---
 
@@ -258,26 +260,31 @@ npm version patch --no-git-tag-version
 
 ## 🛠️ 已實作工具
 
-| 工具                  | 路由                           | 主要功能                                                                                                                                                                                                                                      |
-| :-------------------- | :----------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Base64 編解碼         | `/tools/base64`                | UTF-8 / ASCII 轉換、雙向編解碼、錯誤提示、儲存此次轉換                                                                                                                                                                                        |
-| JWT Decoder           | `/tools/jwt-decoder`           | 解析 JWT Header/Payload、exp/iat/nbf 時間欄位轉換、儲存此次轉換                                                                                                                                                                               |
-| JSON Formatter        | `/tools/json-formatter`        | Format / Minify、語法校驗、複製結果、可搜尋的格式化預覽、儲存此次轉換                                                                                                                                                                         |
-| JSON Schema Validator | `/tools/json-schema-validator` | 驗證 JSON 是否符合 Schema，顯示錯誤 path/keyword/message，支援複製錯誤與儲存此次轉換                                                                                                                                                          |
-| HTML Previewer        | `/tools/html-previewer`        | CodeMirror HTML 編輯器（行號、syntax highlighting）、即時預覽、格式化 HTML、全屏預覽、儲存此次轉換                                                                                                                                            |
-| Markdown Previewer    | `/tools/markdown-previewer`    | 即時渲染、`marked` 解析、上傳檔案轉 Markdown（含 HTML 自動轉換）、可勾選優先使用本地 Python MarkItDown API（不可用時自動 fallback 前端解析）、顯示 MarkItDown 支援類型說明、HTML 渲染結果全屏預覽、儲存此次轉換                               |
-| PDF 工具箱            | `/tools/pdf-toolkit`           | 瀏覽未加密 PDF、調整頁碼與縮放；依清單順序合併多份 PDF，或擷取指定頁碼範圍下載；檔案僅於瀏覽器本機處理                                                                                                                                        |
-| CSV/XLSX Parser       | `/tools/csv-xlsx-to-json`      | 上傳 .csv / .xlsx 分頁瀏覽表格；關鍵字搜尋（符合列黃底標記、僅顯示符合列）；單筆編輯（儲存後即時反映）、單筆刪除（含資料預覽確認 Modal）；可設定分隔符號匯出 JSON / CSV / TXT，匯出以畫面最後呈現資料為準；行號欄凍結，編輯模式同時凍結操作欄 |
-| QRCode Previewer      | `/tools/qrious`                | 即時產生 QR Code、上傳圖片解碼、儲存此次轉換（編碼/解碼）                                                                                                                                                                                     |
-| XSLT 比較器           | `/tools/xslt-diff`             | 上傳或貼上兩份 XSLT / XML，逐行比較並以左右分割視圖高亮差異、儲存此次轉換                                                                                                                                                                     |
-| SQL 比較器            | `/tools/sql-compare`           | 上傳或貼上兩份 SQL，自訂 Regex 比較條件，列出左右缺少清單並可儲存結果                                                                                                                                                                         |
-| SQL Practice          | `/tools/sql-practice`          | 預設家具訂單假資料、線上設定 master/detail schema、下載 JSON 範本、匯入資料並在前端執行 SQL 查詢                                                                                                                                              |
-| Planner Gantt         | `/tools/planner-gantt`         | 匯入 Microsoft Planner XLSX，依 bucket 與日期產生甘特圖；提供已逾期/即將到期、優先順序、人員與 bucket 分布等檢視摘要，並支援圖片匯出                                                                                                          |
-| Pomodoro Timer        | `/tools/pomodoro-timer`        | 可自訂專注/短休息/長休息參數、循環與自動開始規則，採無印良品風格介面                                                                                                                                                                          |
-| Timestamp Converter   | `/tools/timestamp-converter`   | Unix 秒/毫秒、ISO、本地時間互轉，支援自動判斷輸入格式與一鍵帶入現在時間                                                                                                                                                                       |
-| UUID / ULID Generator | `/tools/uuid-ulid-generator`   | 批次產生 UUID v4、UUID v7、ULID，支援 prefix/suffix、複製全部與儲存此次轉換                                                                                                                                                                   |
-| 隱藏字元檢視          | `/tools/hidden-characters`     | 貼上文字後標示空白、換行、Tab、控制字元與 Unicode 零寬字元，並列出位置與碼點                                                                                                                                                                  |
-| 存檔歷史              | `/history`                     | 顯示所有已儲存 raw data（input/output）、可單筆刪除                                                                                                                                                                                           |
+所有工具均在瀏覽器中執行；除非特別標示，檔案不會上傳。工具頁可由側邊欄或路由直接開啟。
+
+| 類別 | 工具與路由 | 實際功能與限制 |
+| :--- | :--- | :--- |
+| 編碼轉換 | **Base64** (`/tools/base64`) | UTF-8 / ASCII 雙向編解碼、複製明文或 Base64、錯誤提示與歷史儲存。 |
+| 編碼轉換 | [QRCode Previewer](/tools/qrious) | 即時產生 QR Code；接受圖片上傳並以瀏覽器解碼；支援編碼與解碼歷史儲存。 |
+| 編碼轉換 | [JWT Decoder](/tools/jwt-decoder) | 解析 `header.payload[.signature]` 與 Bearer 前綴，顯示 Header/Payload/Signature、`exp`/`iat`/`nbf` 時間與過期狀態；不驗證簽章。 |
+| 編碼轉換 | [Hash Generator](/tools/hash-generator) | 文字或最多 2 MB 的文字檔計算 MD5、SHA-1、SHA-256、SHA-512，支援複製與歷史儲存。 |
+| 編碼轉換 | [URL Toolkit](/tools/url-toolkit) | 解析含協定的 URL、編輯 Query 參數、`encodeURIComponent` / `decodeURIComponent`、讀取文字檔第一個非空行。 |
+| 編碼轉換 | [Timestamp Converter](/tools/timestamp-converter) | 自動或指定解析 Unix 秒、毫秒、ISO/日期字串，輸出秒、毫秒、UTC ISO 與本地時間，可帶入現在時間。 |
+| 編碼轉換 | [UUID / ULID Generator](/tools/uuid-ulid-generator) | 產生 UUID v4、時間排序的 UUID v7 或 ULID；批次 1–200 筆，可加 prefix/suffix。 |
+| JSON / 資料 | [JSON Formatter](/tools/json-formatter) | JSON 語法校驗、錯誤行列定位、Format / Minify、樹狀搜尋與展開、JSON 檔案匯入、複製與歷史儲存。 |
+| JSON / 資料 | [JSON Schema Validator](/tools/json-schema-validator) | 使用 Ajv 驗證 JSON Schema，列出 instance path、keyword、message，支援複製結果與歷史儲存。 |
+| JSON / 資料 | [CSV/XLSX Parser](/tools/csv-xlsx-to-json) | 匯入 `.csv` / `.xlsx` 第一個工作表；可指定表頭/資料起始列、搜尋、分頁、編輯、刪除、欄位分組，並匯出 JSON/CSV/TXT。 |
+| JSON / 資料 | [SQL Practice](/tools/sql-practice) | 預設家具訂單資料、master/detail Schema 編輯、JSON 範本下載與匯入，使用瀏覽器內 sql.js 執行 SQLite 查詢；AI 草稿限唯讀 SQL。 |
+| 文字比較 | [Text Diff](/tools/text-diff) | 兩段文字或最多 2 MB 的文字檔逐行比較，支援忽略空白/大小寫、左右同步捲動、差異統計與歷史儲存；每側最多 3,000 行。 |
+| 文字比較 | [XSLT 比較器](/tools/xslt-diff) | 貼上或匯入 `.xsl` / `.xslt` / `.xml`，逐行左右比較，支援忽略空白/縮排與差異統計；每側最多 3,000 行。 |
+| 文字比較 | [SQL 比較器](/tools/sql-compare) | 貼上或匯入 `.sql` / `.txt`，以指定變數、文字或自訂 Regex 擷取值，列出左右缺少項目；可忽略註解/大小寫並儲存結果。 |
+| 文字檢視 | [Hidden Characters](/tools/hidden-characters) | 即時標示空白、換行、Tab、Unicode 空白、控制/格式/零寬字元，列出位置、行欄與 Unicode code point。 |
+| 預覽 | [HTML Previewer](/tools/html-previewer) | CodeMirror HTML/CSS 編輯器、語法高亮、即時 iframe 預覽、HTML 格式化與全屏預覽；內容只在瀏覽器渲染。 |
+| 預覽 | [Markdown Previewer](/tools/markdown-previewer) | `marked` 即時渲染、Markdown 格式化、HTML/表格轉 Markdown、檔案匯入與全屏預覽；可選本機 MarkItDown 轉換。 |
+| 預覽 | [PDF 工具箱](/tools/pdf-toolkit) | 瀏覽未加密 PDF、頁碼/縮放控制、多檔排序合併、指定頁碼範圍擷取與下載；檔案只在瀏覽器處理。 |
+| 專案管理 | [Planner Gantt](/tools/planner-gantt) | 匯入 Microsoft Planner `.xlsx`，依 bucket、日期、部門篩選與排序顯示互動甘特圖，可拖曳調整日期，查看完成度/優先順序統計並匯出圖片。 |
+| 專案管理 | [Pomodoro Timer](/tools/pomodoro-timer) | 自訂專注、短休息、長休息（1–180 分鐘）、循環次數、自動開始、桌面通知、音效與標籤；設定儲存在瀏覽器。 |
+| 系統 | [存檔歷史](/history) | 顯示支援工具手動儲存的 tool/action、Input/Output raw data、時間與 metadata，可單筆刪除。 |
 
 ---
 
