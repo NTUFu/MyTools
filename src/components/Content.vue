@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 interface ToolCard {
   id: string
@@ -81,6 +81,55 @@ const toolCards: ToolCard[] = [
     category: '數據格式化',
   },
   {
+    id: 'cron-helper',
+    name: 'Cron Expression Helper',
+    path: '/tools/cron-helper',
+    description: '解析 Cron 表達式並計算下次執行時間',
+    category: '專案管理',
+  },
+  {
+    id: 'sql-formatter',
+    name: 'SQL Formatter',
+    path: '/tools/sql-formatter',
+    description: 'SQL 格式化、壓縮與關鍵字大小寫調整',
+    category: '資料與 SQL',
+  },
+  {
+    id: 'data-format-converter',
+    name: 'JSON / YAML / TOML',
+    path: '/tools/data-format-converter',
+    description: 'JSON、YAML 與 TOML 格式互轉',
+    category: '數據格式化',
+  },
+  {
+    id: 'git-generators',
+    name: 'Git Generators',
+    path: '/tools/git-generators',
+    description: '產生 .gitignore 與 Conventional Commit 訊息',
+    category: '開發輔助',
+  },
+  {
+    id: 'api-request-builder',
+    name: 'API Request Builder',
+    path: '/tools/api-request-builder',
+    description: '建立 HTTP 請求並檢視回應',
+    category: '開發輔助',
+  },
+  {
+    id: 'workspace',
+    name: '工作區',
+    path: '/tools/workspace',
+    description: '儲存文字片段並在工具間傳遞資料',
+    category: '開發輔助',
+  },
+  {
+    id: 'openapi-viewer',
+    name: 'OpenAPI Viewer',
+    path: '/tools/openapi-viewer',
+    description: '解析 OpenAPI/Swagger 文件並產生 cURL',
+    category: '開發輔助',
+  },
+  {
     id: 'timestamp-converter',
     name: 'Timestamp Converter',
     path: '/tools/timestamp-converter',
@@ -159,12 +208,26 @@ const toolCards: ToolCard[] = [
   },
 ]
 
-const categories = ['編碼轉換', '數據格式化', '內容預覽', 'XML / XSLT', '資料與 SQL', '專案管理']
+const categories = ['編碼轉換', '數據格式化', '內容預覽', 'XML / XSLT', '資料與 SQL', '專案管理', '開發輔助']
+const searchQuery = ref('')
+
+const filteredToolCards = computed(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase()
+  if (!query) {
+    return toolCards
+  }
+
+  return toolCards.filter((tool) =>
+    [tool.name, tool.description, tool.category].some((value) =>
+      value.toLocaleLowerCase().includes(query),
+    ),
+  )
+})
 
 const toolCardsByCategory = computed<Record<string, ToolCard[]>>(() => {
   const grouped: Record<string, ToolCard[]> = Object.fromEntries(categories.map((category) => [category, []]))
 
-  for (const tool of toolCards) {
+  for (const tool of filteredToolCards.value) {
     if (!grouped[tool.category]) {
       grouped[tool.category] = []
     }
@@ -179,9 +242,22 @@ const toolCardsByCategory = computed<Record<string, ToolCard[]>>(() => {
 <template>
   <div class="content-inner">
     <div class="tools-container">
+      <label class="tool-search" for="tool-search-input">
+        <span>搜尋工具</span>
+        <input
+          id="tool-search-input"
+          v-model="searchQuery"
+          type="search"
+          placeholder="輸入工具名稱、描述或分類"
+          autocomplete="off"
+        />
+      </label>
+      <p v-if="searchQuery.trim() && filteredToolCards.length === 0" class="tool-search-empty">
+        找不到符合的工具。
+      </p>
       <div v-for="category in categories" :key="category" class="category-section">
         <h2 class="category-title">{{ category }}</h2>
-        <div class="tools-grid">
+        <div v-if="toolCardsByCategory[category].length > 0" class="tools-grid">
           <RouterLink
             v-for="tool in toolCardsByCategory[category]"
             :key="tool.id"

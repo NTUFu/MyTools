@@ -10,7 +10,10 @@
 
 ## 🆕 目前版本重點（7.2.0）
 
-- 共 21 個工具頁，使用路由獨立載入，支援直接開啟工具 URL。
+- 共 28 個工具頁，使用路由獨立載入，支援直接開啟工具 URL。
+- 首頁提供工具名稱、描述與分類搜尋。
+- 支援 Git 產生器、API Request Builder、工作區、OpenAPI Viewer 與 PWA 離線快取。
+- API Request Builder 內建可收闔的常用 Headers 範本，並支援複製 cURL、回應 Headers、Body 與完整回應。
 - 重型套件採按需載入，包含 PDF、XLSX、Markdown、CodeMirror、QR Code 與 SQL.js。
 - 提供瀏覽器本機處理的編碼、格式化、比較、預覽、資料處理與專案管理工具。
 - 可選擇啟用僅限本機的 Python MarkItDown API 與 AI 輔助功能。
@@ -30,17 +33,17 @@
 - CSV/XLSX Parser 支援自訂表頭列、關鍵字篩選、單筆編輯刪除，並可做主表/明細分組 JSON 匯出。
 - Planner Gantt 支援匯入 Microsoft Planner XLSX，產生可互動甘特圖與統計摘要。
 - Pomodoro Timer 支援自訂專注/休息參數、循環規則與無印良品風格專注計時介面。
+- API Request Builder 支援 GET/POST/PUT/PATCH/DELETE、JSON Body、可收闔常用 Headers、cURL 匯出，以及 Response Status/Headers/Body 檢視與複製。
+- 工作區可將文字片段儲存於瀏覽器 `localStorage`，並傳遞至 JSON Formatter；不會自動上傳內容。
+- OpenAPI Viewer 支援貼上 YAML 文件、瀏覽 API paths 與產生基本 cURL 指令。
+- PWA 支援在正式環境安裝至桌面，並快取已載入的靜態資源以利離線開啟。
 - 各工具可手動儲存「此次轉換 raw data」，並集中在存檔歷史檢視與刪除。
 
 ---
 
 ## 🗺️ 未來規劃 (Roadmap)
 
-目前尚未實作、且仍記錄於 `todo.md` 的項目：
-
-- **Cron Expression Helper**：提供人類可讀描述與下次觸發時間。
-- **SQL Formatter**：支援 SQL 格式化與壓縮。
-- **JWT Decoder 強化**：加入簽章與 `aud`、`iss` 等 Claim 驗證。
+目前已完成第一、二階段的工具擴充。後續可再補充更完整的 API schema 產生、跨裝置同步與進階離線更新策略。
 
 `todo.md` 中原先列出的 URL、Timestamp、UUID/ULID、Hash、Regex、Diff 與 JSON Schema 工具均已完成，請以本 README 的「已實作工具」為準。
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, type CSSProperties } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, type CSSProperties } from 'vue'
+import { useRoute } from 'vue-router'
 import { useHistoryStore } from '../../stores/history'
 import JsonTreeNode from './JsonTreeNode.vue'
 
@@ -24,6 +25,7 @@ interface JsonErrorDetailsResult {
 }
 
 const historyStore = useHistoryStore()
+const route = useRoute()
 
 const jsonInput = ref('')
 const error = ref('')
@@ -40,6 +42,14 @@ const lastConversion = ref<LastJsonConversion | null>(null)
 const saveStatus = ref<'none' | 'saved'>('none')
 const lineNumberContainer = ref<HTMLDivElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+
+onMounted(() => {
+  const workspaceId = typeof route.query.workspace === 'string' ? route.query.workspace : ''
+  if (!workspaceId) return
+  const stored = JSON.parse(localStorage.getItem('mytools:workspace') ?? '[]') as Array<{ id: string; content: string }>
+  const item = stored.find((entry) => entry.id === workspaceId)
+  if (item) jsonInput.value = item.content
+})
 
 let copyStatusTimer: ReturnType<typeof setTimeout> | null = null
 let saveStatusTimer: ReturnType<typeof setTimeout> | null = null

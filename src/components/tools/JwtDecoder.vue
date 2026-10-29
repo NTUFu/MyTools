@@ -104,6 +104,8 @@ const buildHistoryOutput = (decoded: DecodedJwt): string => {
 const historyStore = useHistoryStore()
 
 const tokenInput = ref('')
+const expectedAudience = ref('')
+const expectedIssuer = ref('')
 const decodedJwt = ref<DecodedJwt | null>(null)
 const errorMessage = ref('')
 const saveStatus = ref<'none' | 'saved'>('none')
@@ -175,6 +177,25 @@ const expirationStatus = computed(() => {
 
   const remainingMinutes = Math.floor(remainingMs / 1000 / 60)
   return `有效中（約剩 ${remainingMinutes} 分鐘）`
+})
+
+const claimChecks = computed(() => {
+  if (!decodedJwt.value) return []
+  const payload = decodedJwt.value.payload
+  const checks: Array<{ name: string; status: string }> = []
+  if (exp.value !== null) checks.push({ name: 'exp', status: Date.now() < exp.value * 1000 ? '有效' : '已過期' })
+  if (nbf.value !== null) checks.push({ name: 'nbf', status: Date.now() >= nbf.value * 1000 ? '已生效' : '尚未生效' })
+  if (expectedAudience.value.trim()) {
+    const audience = payload.aud
+    const valid = Array.isArray(audience)
+      ? audience.includes(expectedAudience.value.trim())
+      : audience === expectedAudience.value.trim()
+    checks.push({ name: 'aud', status: valid ? '符合' : '不符合' })
+  }
+  if (expectedIssuer.value.trim()) {
+    checks.push({ name: 'iss', status: payload.iss === expectedIssuer.value.trim() ? '符合' : '不符合' })
+  }
+  return checks
 })
 
 const handleDecode = () => {
@@ -347,6 +368,13 @@ onBeforeUnmount(() => {
             <strong>狀態</strong>
             <span>{{ expirationStatus }}</span>
           </div>
+          <div style="display: flex; gap: 8px; margin-top: 12px">
+            <input v-model="expectedAudience" placeholder="預期 aud（選填）" style="flex: 1; padding: 6px" />
+            <input v-model="expectedIssuer" placeholder="預期 iss（選填）" style="flex: 1; padding: 6px" />
+          </div>
+          <ul v-if="claimChecks.length > 0" style="margin: 10px 0 0; padding-left: 20px">
+            <li v-for="check in claimChecks" :key="check.name">{{ check.name }}：{{ check.status }}</li>
+          </ul>
         </div>
 
         <div style="border: 1px solid #ddd; border-radius: 8px; background-color: #fff; padding: 10px">

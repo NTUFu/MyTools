@@ -22,6 +22,13 @@ const UuidUlidGenerator = () => import('../components/tools/UuidUlidGenerator.vu
 const PomodoroTimer = () => import('../components/tools/PomodoroTimer.vue')
 const SqlPractice = () => import('../components/tools/SqlPractice.vue')
 const HiddenCharacters = () => import('../components/tools/HiddenCharacters.vue')
+const CronHelper = () => import('../components/tools/CronHelper.vue')
+const SqlFormatter = () => import('../components/tools/SqlFormatter.vue')
+const DataFormatConverter = () => import('../components/tools/DataFormatConverter.vue')
+const GitGenerators = () => import('../components/tools/GitGenerators.vue')
+const ApiRequestBuilder = () => import('../components/tools/ApiRequestBuilder.vue')
+const Workspace = () => import('../components/tools/Workspace.vue')
+const OpenApiViewer = () => import('../components/tools/OpenApiViewer.vue')
 const PdfToolkit = () => import('../components/tools/PdfToolkit.vue')
 const HistoryPage = () => import('../components/History.vue')
 const AiSettings = () => import('../components/AiSettings.vue')
@@ -50,6 +57,13 @@ const router = createRouter({
     { path: '/tools/pomodoro-timer', component: PomodoroTimer },
     { path: '/tools/sql-practice', component: SqlPractice },
     { path: '/tools/hidden-characters', component: HiddenCharacters },
+    { path: '/tools/cron-helper', component: CronHelper },
+    { path: '/tools/sql-formatter', component: SqlFormatter },
+    { path: '/tools/data-format-converter', component: DataFormatConverter },
+    { path: '/tools/git-generators', component: GitGenerators },
+    { path: '/tools/api-request-builder', component: ApiRequestBuilder },
+    { path: '/tools/workspace', component: Workspace },
+    { path: '/tools/openapi-viewer', component: OpenApiViewer },
     { path: '/tools/pdf-toolkit', component: PdfToolkit },
     { path: '/history', component: HistoryPage },
     { path: '/settings/ai', component: AiSettings, meta: { localOnly: true } },
