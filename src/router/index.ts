@@ -85,5 +85,15 @@ router.beforeEach((to) => {
     return { path: '/', replace: true }
   }
 })
+
+// 部署後舊快取的 chunk 檔名失效時，重新載入一次以取得最新資源
+router.onError((error, to) => {
+  const message = String((error as Error)?.message ?? error)
+  if (!/dynamically imported module|Importing a module script failed|Loading chunk/i.test(message)) return
+  const key = 'mytools:chunk-reload'
+  if (sessionStorage.getItem(key) === to.fullPath) return
+  sessionStorage.setItem(key, to.fullPath)
+  window.location.assign(to.fullPath)
+})
 
 export default router
