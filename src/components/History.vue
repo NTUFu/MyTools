@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useHistoryStore } from '../stores/history'
-import type { ConversionHistoryItem, ToolType } from '../utils/historyStore'
+import type { ToolType } from '../utils/historyStore'
 
 const historyStore = useHistoryStore()
 const historyItems = computed(() => historyStore.historyItems)
+const websiteHistoryItems = computed(() => historyStore.websiteHistoryItems)
 
 const TOOL_NAME_MAP: Record<ToolType, string> = {
   base64: 'Base64 編解碼',
@@ -47,6 +48,14 @@ const historyDisplayItems = computed(() => {
 
 const handleDelete = (id: string) => {
   historyStore.deleteHistoryItem(id)
+}
+
+const handleDeleteWebsiteVisit = (id: string) => {
+  historyStore.deleteWebsiteVisitHistoryItem(id)
+}
+
+const handleClearWebsiteHistory = () => {
+  historyStore.clearWebsiteVisitHistoryItems()
 }
 
 onMounted(() => {
@@ -109,6 +118,71 @@ onMounted(() => {
             >{{ item.output }}</pre>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin: 28px 0 15px">
+      <div>
+        <h2 style="margin: 0 0 4px">網站開啟紀錄</h2>
+        <p style="color: #666; margin: 0">僅儲存在此瀏覽器的 localStorage，不會上傳至伺服器。</p>
+      </div>
+      <button
+        v-if="websiteHistoryItems.length"
+        @click="handleClearWebsiteHistory"
+        class="tool-button tool-button--compact"
+        style="--tool-button-bg: #f44336"
+      >
+        清除全部
+      </button>
+    </div>
+
+    <div
+      v-if="websiteHistoryItems.length === 0"
+      style="border: 1px dashed #c8c8c8; border-radius: 8px; padding: 20px; color: #666; background-color: #fafafa"
+    >
+      目前沒有網站開啟紀錄。
+    </div>
+
+    <div v-else style="display: flex; flex-direction: column; gap: 12px">
+      <div
+        v-for="item in websiteHistoryItems"
+        :key="item.id"
+        style="border: 1px solid #ddd; border-radius: 8px; background-color: #fff; padding: 14px"
+      >
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px">
+          <div style="min-width: 0">
+            <strong>{{ item.title || '未命名頁面' }}</strong>
+            <div style="color: #666; overflow-wrap: anywhere">{{ item.url }}</div>
+            <div style="color: #888; font-size: 0.85em">{{ formatTime(item.createdAt) }}</div>
+          </div>
+          <button
+            @click="handleDeleteWebsiteVisit(item.id)"
+            class="tool-button tool-button--compact"
+            style="--tool-button-bg: #f44336"
+          >
+            刪除
+          </button>
+        </div>
+
+        <div
+          style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px 16px; margin-top: 12px; color: #555; font-size: 0.9em"
+        >
+          <div>Referrer：{{ item.referrer || '無' }}</div>
+          <div>語言：{{ item.languages.join(', ') || item.language }}</div>
+          <div>平台：{{ item.platform || '未知' }}</div>
+          <div>瀏覽器：{{ item.vendor || '未知' }}</div>
+          <div>螢幕：{{ item.screenWidth }} × {{ item.screenHeight }}（{{ item.colorDepth }} bit）</div>
+          <div>視窗：{{ item.viewportWidth }} × {{ item.viewportHeight }}，像素比 {{ item.devicePixelRatio }}</div>
+          <div>時區：{{ item.timezone }}（UTC{{ item.timezoneOffset <= 0 ? '+' : '-' }}{{ Math.abs(item.timezoneOffset / 60) }}）</div>
+          <div>Cookie：{{ item.cookieEnabled ? '已啟用' : '未啟用' }}；網路：{{ item.online ? '線上' : '離線' }}</div>
+          <div>CPU 核心：{{ item.hardwareConcurrency || '未知' }}；觸控點：{{ item.maxTouchPoints }}</div>
+          <div v-if="item.deviceMemory !== undefined">裝置記憶體：{{ item.deviceMemory }} GB</div>
+        </div>
+
+        <details style="margin-top: 10px">
+          <summary style="cursor: pointer; color: #666">User-Agent</summary>
+          <pre style="white-space: pre-wrap; overflow-wrap: anywhere; color: #555">{{ item.userAgent }}</pre>
+        </details>
       </div>
     </div>
   </div>
