@@ -21,34 +21,83 @@ const navItems: NavItem[] = [
     text: '我的工具',
     shortText: '工',
     children: [
-      { id: 21, text: 'Base64', shortText: 'B', path: '/tools/base64' },
-      { id: 22, text: 'JSON Formatter', shortText: 'J', path: '/tools/json-formatter' },
-      { id: 23, text: 'HTML Previewer', shortText: 'H', path: '/tools/html-previewer' },
-      { id: 24, text: 'Markdown Previewer', shortText: 'M', path: '/tools/markdown-previewer' },
-      { id: 41, text: 'PDF 工具箱', shortText: 'P', path: '/tools/pdf-toolkit' },
-      { id: 25, text: 'QRCode Previewer', shortText: 'Q', path: '/tools/qrious' },
-      { id: 26, text: 'JWT Decoder', shortText: 'J', path: '/tools/jwt-decoder' },
-      { id: 27, text: 'XSLT Compare', shortText: 'X', path: '/tools/xslt-diff' },
-      { id: 28, text: 'SQL Compare', shortText: 'C', path: '/tools/sql-compare' },
-      { id: 29, text: 'SQL Practice', shortText: 'S', path: '/tools/sql-practice' },
-      { id: 30, text: 'CSV/XLSX Parser', shortText: 'C', path: '/tools/csv-xlsx-to-json' },
-      { id: 31, text: 'Planner Gantt', shortText: 'P', path: '/tools/planner-gantt' },
-      { id: 32, text: 'Hash Generator', shortText: 'H', path: '/tools/hash-generator' },
-      { id: 33, text: 'Text Diff', shortText: 'D', path: '/tools/text-diff' },
-      { id: 34, text: 'URL Toolkit', shortText: 'U', path: '/tools/url-toolkit' },
-      { id: 35, text: 'Regex Tester', shortText: 'R', path: '/tools/regex-tester' },
-      { id: 36, text: 'JSON Schema Validator', shortText: 'V', path: '/tools/json-schema-validator' },
-      { id: 37, text: 'Timestamp Converter', shortText: 'T', path: '/tools/timestamp-converter' },
-      { id: 38, text: 'UUID / ULID Generator', shortText: 'U', path: '/tools/uuid-ulid-generator' },
-      { id: 39, text: 'Pomodoro Timer', shortText: 'P', path: '/tools/pomodoro-timer' },
-      { id: 40, text: 'Hidden Characters', shortText: 'H', path: '/tools/hidden-characters' },
-      { id: 42, text: 'Cron Helper', shortText: 'C', path: '/tools/cron-helper' },
-      { id: 43, text: 'SQL Formatter', shortText: 'F', path: '/tools/sql-formatter' },
-      { id: 44, text: 'JSON/YAML/TOML', shortText: 'Y', path: '/tools/data-format-converter' },
-      { id: 45, text: 'Git Generators', shortText: 'G', path: '/tools/git-generators' },
-      { id: 46, text: 'API Request Builder', shortText: 'A', path: '/tools/api-request-builder' },
-      { id: 47, text: '工作區', shortText: 'W', path: '/tools/workspace' },
-      { id: 48, text: 'OpenAPI Viewer', shortText: 'O', path: '/tools/openapi-viewer' },
+      {
+        id: 201,
+        text: '編碼轉換',
+        shortText: '編',
+        children: [
+          { id: 21, text: 'Base64', shortText: 'B', path: '/tools/base64' },
+          { id: 25, text: 'QRCode Previewer', shortText: 'Q', path: '/tools/qrious' },
+          { id: 26, text: 'JWT Decoder', shortText: 'J', path: '/tools/jwt-decoder' },
+          { id: 32, text: 'Hash Generator', shortText: 'H', path: '/tools/hash-generator' },
+          { id: 34, text: 'URL Toolkit', shortText: 'U', path: '/tools/url-toolkit' },
+          { id: 37, text: 'Timestamp Converter', shortText: 'T', path: '/tools/timestamp-converter' },
+          { id: 38, text: 'UUID / ULID Generator', shortText: 'U', path: '/tools/uuid-ulid-generator' },
+        ],
+      },
+      {
+        id: 202,
+        text: '數據格式化',
+        shortText: '數',
+        children: [
+          { id: 22, text: 'JSON Formatter', shortText: 'J', path: '/tools/json-formatter' },
+          { id: 36, text: 'JSON Schema Validator', shortText: 'V', path: '/tools/json-schema-validator' },
+          { id: 30, text: 'CSV/XLSX Parser', shortText: 'C', path: '/tools/csv-xlsx-to-json' },
+          { id: 33, text: 'Text Diff', shortText: 'D', path: '/tools/text-diff' },
+          { id: 40, text: 'Hidden Characters', shortText: 'H', path: '/tools/hidden-characters' },
+          { id: 44, text: 'JSON/YAML/TOML', shortText: 'Y', path: '/tools/data-format-converter' },
+          { id: 35, text: 'Regex Tester', shortText: 'R', path: '/tools/regex-tester' },
+        ],
+      },
+      {
+        id: 203,
+        text: '內容預覽',
+        shortText: '預',
+        children: [
+          { id: 23, text: 'HTML Previewer', shortText: 'H', path: '/tools/html-previewer' },
+          { id: 24, text: 'Markdown Previewer', shortText: 'M', path: '/tools/markdown-previewer' },
+          { id: 41, text: 'PDF 工具箱', shortText: 'P', path: '/tools/pdf-toolkit' },
+        ],
+      },
+      {
+        id: 204,
+        text: 'XML / XSLT',
+        shortText: 'X',
+        children: [
+          { id: 27, text: 'XSLT Compare', shortText: 'X', path: '/tools/xslt-diff' },
+        ],
+      },
+      {
+        id: 205,
+        text: '資料與 SQL',
+        shortText: 'S',
+        children: [
+          { id: 28, text: 'SQL Compare', shortText: 'C', path: '/tools/sql-compare' },
+          { id: 29, text: 'SQL Practice', shortText: 'S', path: '/tools/sql-practice' },
+          { id: 43, text: 'SQL Formatter', shortText: 'F', path: '/tools/sql-formatter' },
+        ],
+      },
+      {
+        id: 206,
+        text: '專案管理',
+        shortText: '專',
+        children: [
+          { id: 42, text: 'Cron Helper', shortText: 'C', path: '/tools/cron-helper' },
+          { id: 31, text: 'Planner Gantt', shortText: 'P', path: '/tools/planner-gantt' },
+          { id: 39, text: 'Pomodoro Timer', shortText: 'P', path: '/tools/pomodoro-timer' },
+        ],
+      },
+      {
+        id: 207,
+        text: '開發輔助',
+        shortText: '開',
+        children: [
+          { id: 45, text: 'Git Generators', shortText: 'G', path: '/tools/git-generators' },
+          { id: 46, text: 'API Request Builder', shortText: 'A', path: '/tools/api-request-builder' },
+          { id: 47, text: '工作區', shortText: 'W', path: '/tools/workspace' },
+          { id: 48, text: 'OpenAPI Viewer', shortText: 'O', path: '/tools/openapi-viewer' },
+        ],
+      },
     ],
   },
   { id: 3, text: 'History', shortText: 'H', path: '/history' },
@@ -58,6 +107,7 @@ const navItems: NavItem[] = [
 const route = useRoute()
 const uiStore = useUiStore()
 const { isSidebarCollapsed } = storeToRefs(uiStore)
+const categoryItemIds = new Set(navItems[1].children?.map((item) => item.id) ?? [])
 const expandedItemIds = ref<number[]>([2])
 const appVersion = __APP_VERSION__
 
@@ -70,7 +120,7 @@ const itemHasActiveChild = (item: NavItem) => {
     return false
   }
 
-  return item.children.some((child) => route.path === child.path)
+  return item.children.some((child) => route.path === child.path || itemHasActiveChild(child))
 }
 
 const isExpanded = (itemId: number) => expandedItemIds.value.includes(itemId)
@@ -81,7 +131,10 @@ const toggleExpanded = (itemId: number) => {
     return
   }
 
-  expandedItemIds.value = [...expandedItemIds.value, itemId]
+  const expandedItemIdsWithoutOtherCategories = categoryItemIds.has(itemId)
+    ? expandedItemIds.value.filter((id) => !categoryItemIds.has(id))
+    : expandedItemIds.value
+  expandedItemIds.value = [...expandedItemIdsWithoutOtherCategories, itemId]
 }
 
 const navContainerClass = computed(() => ['sidebar', { collapsed: isSidebarCollapsed.value }])
@@ -125,13 +178,47 @@ const navContainerClass = computed(() => ['sidebar', { collapsed: isSidebarColla
 
         <ul v-if="item.children && isExpanded(item.id)" class="sub-menu">
           <li v-for="child in item.children" :key="child.id" class="nav-item sub-item">
+            <button
+              v-if="child.children"
+              :id="`category-toggle-${child.id}`"
+              type="button"
+              class="nav-link-content sub-link category-toggle"
+              :class="{ active: itemHasActiveChild(child) }"
+              :aria-expanded="isExpanded(child.id)"
+              :aria-controls="`category-menu-${child.id}`"
+              @click="toggleExpanded(child.id)"
+            >
+              <span class="text">{{ child.text }}</span>
+              <span class="submenu-toggle">
+                <ChevronUpIcon v-if="isExpanded(child.id)" style="width: 16px; height: 16px" />
+                <ChevronDownIcon v-else style="width: 16px; height: 16px" />
+              </span>
+            </button>
             <RouterLink
+              v-else
               :to="child.path || '/'"
               class="nav-link-content sub-link"
               active-class="active"
             >
               <span class="text">{{ child.text }}</span>
             </RouterLink>
+
+            <ul
+              v-if="child.children && isExpanded(child.id)"
+              :id="`category-menu-${child.id}`"
+              class="sub-menu category-menu"
+              :aria-labelledby="`category-toggle-${child.id}`"
+            >
+              <li v-for="tool in child.children" :key="tool.id" class="nav-item">
+                <RouterLink
+                  :to="tool.path || '/'"
+                  class="nav-link-content sub-link"
+                  active-class="active"
+                >
+                  <span class="text">{{ tool.text }}</span>
+                </RouterLink>
+              </li>
+            </ul>
           </li>
         </ul>
       </li>
