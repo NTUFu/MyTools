@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
+import { aiIsReady, generateAiText, refreshAiRuntimeConfig } from '../../utils/aiClient'
+import { isLocalAiAvailable } from '../../utils/localAi'
 
 type Header = { key: string; value: string; enabled: boolean }
 type CopyTarget = 'request' | 'response' | 'response-headers' | 'response-body' | 'none'
@@ -23,6 +25,13 @@ const responseHeaders = ref('')
 const errorMessage = ref('')
 const isLoading = ref(false)
 const copyStatus = ref<CopyTarget>('none')
+const aiIsLocal = isLocalAiAvailable()
+const aiDescription = ref('')
+const aiResult = ref('')
+const aiBodyDraft = ref('')
+const aiError = ref('')
+const isRequestingAi = ref(false)
+let activeAiRequest: AbortController | null = null
 
 const activeHeaders = computed(() => headers.value.filter((item) => item.enabled && item.key.trim() && item.value.trim()))
 const requestHeaders = computed(() => Object.fromEntries(activeHeaders.value.map((item) => [item.key.trim(), item.value])))
@@ -79,6 +88,68 @@ const send = async () => {
     isLoading.value = false
   }
 }
+
+const clearAiSuggestion = () => {
+  const controller = activeAiRequest
+  activeAiRequest = null
+  isRequestingAi.value = false
+  aiResult.value = ''
+  aiBodyDraft.value = ''
+  aiError.value = ''
+  controller?.abort()
+}
+
+const requestBodyAi = async () => {
+  refreshAiRuntimeConfig()
+  aiError.value = ''
+  aiResult.value = ''
+  aiBodyDraft.value = ''
+  if (!aiDescription.value.trim()) {
+    aiError.value = '請先描述預期的請求資料。'
+    return
+  }
+
+  const controller = new AbortController()
+  activeAiRequest = controller
+  isRequestingAi.value = true
+  try {
+    const result = await generateAiText({
+      tool: 'api-request-builder',
+      action: 'generate-json-body',
+      prompt: '根據使用者描述產生一個合理的 JSON 請求 Body 範例。只輸出有效 JSON，不要 Markdown 或說明；使用虛構的範例值，不要要求或重複任何憑證、個資或真實機密。',
+      context: `請求 Body 需求：\n${aiDescription.value.trim()}`,
+      signal: controller.signal,
+    })
+    aiResult.value = result.text
+    const candidate = result.text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim() ?? result.text.trim()
+    try {
+      aiBodyDraft.value = JSON.stringify(JSON.parse(candidate), null, 2)
+    } catch {
+      aiError.value = 'AI 回覆不是有效 JSON，無法帶入 Body；原內容未變更。'
+    }
+  } catch (error) {
+    if (activeAiRequest === controller) {
+      aiError.value = error instanceof Error
+        ? error.name === 'AbortError' ? '已取消 AI 請求。' : error.message
+        : 'AI 請求失敗。'
+    }
+  } finally {
+    if (activeAiRequest === controller) {
+      activeAiRequest = null
+      isRequestingAi.value = false
+    }
+  }
+}
+
+const applyAiBodyDraft = () => {
+  if (aiBodyDraft.value) {
+    body.value = aiBodyDraft.value
+  }
+}
+
+const cancelAiRequest = () => activeAiRequest?.abort()
+
+onBeforeUnmount(clearAiSuggestion)
 </script>
 
 <template>
@@ -111,7 +182,26 @@ const send = async () => {
       </div>
     </div>
     <h3>Body</h3>
-    <textarea v-model="body" class="tool-textarea" rows="6" placeholder='{"key":"value"}'></textarea>
+    <textarea v-model="body" class="tool-textarea" rows="6" placeholder='{"key":"value"}' @input="clearAiSuggestion"></textarea>
+    <section v-if="aiIsLocal" style="display: grid; gap: 10px; padding: 14px; border: 1px solid #c7d2fe; border-radius: 8px; background: #f8faff">
+      <div>
+        <strong>AI JSON Body 助手</strong>
+        <p style="margin: 5px 0 0; color: #64748b; font-size: 12px; line-height: 1.5">只傳送你在此輸入的 Body 需求；不會傳送 URL、Headers、既有 Body 或 API 回應。請勿在需求中輸入密鑰或個人資料。草稿需通過 JSON 解析並手動套用，不會送出請求。</p>
+      </div>
+      <textarea v-model="aiDescription" class="tool-textarea" rows="2" maxlength="4000" placeholder="描述要建立的 JSON 請求資料" @input="clearAiSuggestion" />
+      <div class="tool-actions">
+        <button class="tool-button tool-button--compact" type="button" :disabled="!aiIsReady || isRequestingAi" @click="requestBodyAi">
+          {{ isRequestingAi ? '產生中…' : '產生 JSON Body 草稿' }}
+        </button>
+        <button v-if="isRequestingAi" class="tool-button tool-button--compact" type="button" @click="cancelAiRequest">取消請求</button>
+        <RouterLink v-if="!aiIsReady" to="/settings/ai">前往 AI 設定</RouterLink>
+      </div>
+      <p v-if="aiError" class="tool-error" role="status">{{ aiError }}</p>
+      <div v-if="aiResult" style="display: grid; gap: 8px">
+        <pre class="tool-output">{{ aiBodyDraft || aiResult }}</pre>
+        <button v-if="aiBodyDraft" class="tool-button tool-button--compact" type="button" @click="applyAiBodyDraft">將 JSON 草稿帶入 Body</button>
+      </div>
+    </section>
     <h3>cURL</h3>
     <div class="api-output-heading">
       <button class="tool-button tool-button--compact" type="button" @click="copyText(curlCommand, 'request')">

@@ -85,14 +85,15 @@ npm run dev
 
 開發站預設啟動於 <http://localhost:5173/>。
 
-若要一鍵同時啟動前端與本地 Python API（會自動檢查/建立 `python_api/.venv`）：
+`npm run dev` 僅啟動前端，不包含 AI 連線所需的本機 Python API。若已執行 `npm run dev`，請先回到該終端按 `Ctrl+C` 停止，再執行以下指令，一次啟動前端與本機 Python API（會自動檢查/建立 `python_api/.venv`）：
 
 ```bash
 npm run dev:local
 ```
 
 注意：`dev:local` 需要 Python 3.10+（MarkItDown 要求）。
-若目前版本過舊，`dev:local` 會先詢問是否自動安裝（macOS + Homebrew 環境）。
+`dev:local` 會自動建立 Python 虛擬環境並啟動 Vite 與本機 API，Windows/macOS/Linux 皆可使用；若 Python 未加入 PATH，可設定 `MYTOOLS_PYTHON` 指向 Python 執行檔。
+使用 AI 設定或本機檔案轉換時，請保持 `npm run dev:local` 執行。若 AI 連線測試顯示本機 API HTTP 500，請確認 API 終端已啟動並監聽 `127.0.0.1:8000`。
 
 ### （可選）啟動本地 Python 轉換 API（MarkItDown）
 
@@ -135,8 +136,13 @@ AI 功能是可選的本機擴充，不影響各工具原有功能。請在專�
 
 - **Regex Tester**：依文字描述產生 Regex、解釋 Regex、建議測試案例。只傳需求描述或 Pattern／Flags，不傳測試文字或上傳檔案內容；產生結果需先通過 Regex 語法檢查，再由使用者手動套用。
 - **SQL Practice**：依目前 Schema 與需求產生唯讀 SQL 草稿，或解釋目前 SQL。不傳匯入資料列；SQL 草稿需手動套用，再由使用者按「執行 SQL」交給瀏覽器內的 sql.js 執行。
+- **Cron Expression Helper**：依排程描述產生 5 欄位 Cron，或解釋目前表達式。產生結果需通過欄位格式檢查並由使用者手動套用；下次執行時間仍由原工具計算。
+- **Git Generators**：依使用者輸入的變更摘要建議 Conventional Commit subject，不讀取 Git 狀態、不執行 Git 操作；建議需通過格式檢查並由使用者手動套用。
+- **JSON Schema Validator**：解釋 validator 產生的錯誤摘要；只傳送錯誤路徑、keyword 與訊息，不傳送 Schema 或 JSON 資料，也不會修改驗證結果。
+- **OpenAPI Viewer**：解釋所選 Endpoint 或依其結構產生虛構的請求 Body 範例。只傳送所選 method/path/summary、參數與請求 Schema 結構、回應狀態碼；不傳送完整文件、Server URL、描述、認證或範例值。
+- **API Request Builder**：依使用者輸入的需求產生 JSON Body 草稿；不傳送 URL、Headers、既有 Body 或 API 回應。草稿需通過 JSON 解析並由使用者手動套用，不會自動送出請求。
 
-所有 AI 操作都需使用者明確點擊才會送出資料。AI 回覆是建議草稿，不會自動執行或取代原有工具結果。
+所有 AI 操作都需使用者明確點擊才會送出資料。AI 回覆是建議草稿或說明，不會自動套用、執行或取代原有工具結果。當 Provider 設為外部服務時，只有上述明確列出的 Prompt／Context 會送至該 Provider；請勿在自由輸入內容中放入密鑰、個人資料或其他敏感資訊。
 
 ### 用量與隱私
 

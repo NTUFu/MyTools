@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import Ajv, { type ErrorObject } from 'ajv'
 import { useHistoryStore } from '../../stores/history'
+import { aiIsReady, generateAiText, refreshAiRuntimeConfig } from '../../utils/aiClient'
+import { isLocalAiAvailable } from '../../utils/localAi'
 
 type CopyTarget = 'none' | 'errors' | 'normalized-json'
 
@@ -40,6 +42,19 @@ const validationErrors = ref<ValidationErrorItem[]>([])
 const normalizedJson = ref('')
 const copyStatus = ref<CopyTarget>('none')
 const saveStatus = ref<'none' | 'saved'>('none')
+const aiIsLocal = isLocalAiAvailable()
+const aiExplanation = ref('')
+const aiError = ref('')
+const isRequestingAi = ref(false)
+let activeAiRequest: AbortController | null = null
+const AI_ERROR_SUMMARY_LIMIT = 40
+
+const abortAiRequestSilently = () => {
+  const controller = activeAiRequest
+  activeAiRequest = null
+  isRequestingAi.value = false
+  controller?.abort()
+}
 
 let copyTimer: ReturnType<typeof setTimeout> | null = null
 let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -97,6 +112,9 @@ const toErrorItems = (errors: ErrorObject[] | null | undefined): ValidationError
 }
 
 const runValidation = () => {
+  abortAiRequestSilently()
+  aiExplanation.value = ''
+  aiError.value = ''
   clearStatus()
 
   let parsedSchema: unknown
@@ -183,13 +201,69 @@ const handleSave = () => {
 }
 
 const handleClear = () => {
+  abortAiRequestSilently()
   schemaInput.value = '{}'
   jsonInput.value = '{}'
   isValid.value = null
   validationErrors.value = []
   normalizedJson.value = ''
+  aiExplanation.value = ''
+  aiError.value = ''
   clearStatus()
 }
+
+const handleValidationInput = () => {
+  abortAiRequestSilently()
+  aiExplanation.value = ''
+  aiError.value = ''
+  saveStatus.value = 'none'
+}
+
+const explainValidationErrors = async () => {
+  refreshAiRuntimeConfig()
+  aiError.value = ''
+  aiExplanation.value = ''
+
+  if (isValid.value !== false || validationErrors.value.length === 0) {
+    aiError.value = '請先執行驗證並確認有驗證錯誤。'
+    return
+  }
+
+  const controller = new AbortController()
+  activeAiRequest = controller
+  isRequestingAi.value = true
+  try {
+    const errors = validationErrors.value.slice(0, AI_ERROR_SUMMARY_LIMIT).map(({ path, message, keyword }) => ({
+      path: path.slice(0, 160),
+      keyword: keyword.slice(0, 80),
+      message: message.slice(0, 240),
+    }))
+    const result = await generateAiText({
+      tool: 'json-schema-validator',
+      action: 'explain-validation-errors',
+      prompt: '用繁體中文逐項說明這些 JSON Schema 驗證錯誤代表什麼，以及可採取的修正方向。只依據錯誤路徑、keyword 和訊息推論；不要猜測或產生任何實際資料值，也不要修改資料。',
+      context: `驗證錯誤摘要：\n${JSON.stringify({
+        errors,
+        omittedErrorCount: validationErrors.value.length - errors.length,
+      })}`,
+      signal: controller.signal,
+    })
+    aiExplanation.value = result.text
+  } catch (error) {
+    if (activeAiRequest === controller) {
+      aiError.value = error instanceof Error
+        ? error.name === 'AbortError' ? '已取消 AI 請求。' : error.message
+        : 'AI 請求失敗。'
+    }
+  } finally {
+    if (activeAiRequest === controller) {
+      activeAiRequest = null
+      isRequestingAi.value = false
+    }
+  }
+}
+
+const cancelAiRequest = () => activeAiRequest?.abort()
 
 const resultTitle = computed(() => {
   if (isValid.value === null) {
@@ -200,6 +274,7 @@ const resultTitle = computed(() => {
 })
 
 onBeforeUnmount(() => {
+  abortAiRequestSilently()
   clearTimer('copy')
   clearTimer('save')
 })
@@ -231,7 +306,7 @@ onBeforeUnmount(() => {
           rows="14"
           spellcheck="false"
           style="width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-family: Consolas, monospace"
-          @input="saveStatus = 'none'"
+          @input="handleValidationInput"
         />
       </div>
 
@@ -242,7 +317,7 @@ onBeforeUnmount(() => {
           rows="14"
           spellcheck="false"
           style="width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-family: Consolas, monospace"
-          @input="saveStatus = 'none'"
+          @input="handleValidationInput"
         />
       </div>
     </div>
@@ -275,5 +350,21 @@ onBeforeUnmount(() => {
 
       <div v-if="isValid === null" style="color: #666">請輸入 Schema 與 JSON，然後按「驗證」。</div>
     </div>
+
+    <section v-if="aiIsLocal" style="display: grid; gap: 10px; padding: 14px; border: 1px solid #c7d2fe; border-radius: 8px; background: #f8faff">
+      <div>
+        <strong>AI 驗證錯誤說明</strong>
+        <p style="margin: 5px 0 0; color: #64748b; font-size: 12px; line-height: 1.5">僅傳送 validator 產生的錯誤路徑、keyword 與訊息；不會傳送 Schema 或 JSON 內容。AI 建議不會修改驗證結果或資料。</p>
+      </div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center">
+        <button class="tool-button tool-button--compact" type="button" :disabled="!aiIsReady || isRequestingAi || isValid !== false" @click="explainValidationErrors">
+          {{ isRequestingAi ? '說明中…' : '解釋驗證錯誤' }}
+        </button>
+        <button v-if="isRequestingAi" class="tool-button tool-button--compact" type="button" @click="cancelAiRequest">取消請求</button>
+        <RouterLink v-if="!aiIsReady" to="/settings/ai">前往 AI 設定</RouterLink>
+      </div>
+      <p v-if="aiError" class="tool-error" role="status">{{ aiError }}</p>
+      <pre v-if="aiExplanation" class="tool-output">{{ aiExplanation }}</pre>
+    </section>
   </div>
 </template>

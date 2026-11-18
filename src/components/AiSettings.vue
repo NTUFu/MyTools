@@ -75,6 +75,15 @@ const canTestConnection = computed(() =>
   (settings.value.provider !== 'custom' || settings.value.endpoint.trim() !== ''),
 )
 
+const formatConnectionError = (message: string) => {
+  const providerError = message.match(/^AI Provider 回應 HTTP (\d+)：\s*(.*)$/s)
+  if (!providerError) {
+    return message
+  }
+
+  return `連線測試失敗（HTTP ${providerError[1]}）\n\nProvider 訊息：\n${providerError[2]}`
+}
+
 const loadSettings = () => {
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY)
@@ -150,6 +159,11 @@ const testConnection = async () => {
     try {
       result = JSON.parse(responseText) as typeof result
     } catch {
+      if (response.status >= 500) {
+        throw new Error(
+          `本機 AI API 未正常回應（HTTP ${response.status}）。請以 npm run dev:local 啟動前後端，並檢查 API 終端錯誤。`,
+        )
+      }
       throw new Error(
         `本機 AI API 回應格式錯誤（HTTP ${response.status}）。請確認 API 正在執行；可重新啟動 npm run dev:local 後再試。`,
       )
@@ -162,7 +176,7 @@ const testConnection = async () => {
     await loadUsage()
   } catch (error) {
     testState.value = 'error'
-    testMessage.value = error instanceof Error ? error.message : '連線測試失敗。'
+    testMessage.value = formatConnectionError(error instanceof Error ? error.message : '連線測試失敗。')
     await loadUsage()
   }
 }
@@ -374,7 +388,7 @@ h2 { margin: 0; color: #172554; font-size: 19px; }
 .danger-text { color: #b91c1c; }
 .ai-primary-button:disabled, .ai-secondary-button:disabled, .ai-text-button:disabled { opacity: .5; cursor: not-allowed; }
 .ai-saved-message { color: #15803d; font-size: 12px; }
-.ai-feedback { margin: 14px 0 0; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #f8fafc; color: #334155; font-size: 13px; }
+.ai-feedback { margin: 14px 0 0; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #f8fafc; color: #334155; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ai-feedback.is-success { border-color: #86efac; background: #f0fdf4; color: #166534; }
 .ai-feedback.is-error { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
 .ai-feedback.is-testing { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }

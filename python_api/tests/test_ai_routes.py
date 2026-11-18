@@ -29,10 +29,41 @@ class FakeResponse:
 class FakeErrorResponse:
     is_success = False
     status_code = 500
+    text = '{"error":{"message":"Internal error while processing the request."}}'
 
     @staticmethod
     def json() -> dict[str, object]:
         return {'error': {'message': 'Internal error while processing the request.'}}
+
+
+class FakeBadRequestResponse:
+    is_success = False
+    status_code = 400
+    text = '{"error":{"message":"API key invalid-test-key is invalid."}}'
+
+    @staticmethod
+    def json() -> dict[str, object]:
+        return {'error': {'message': 'API key invalid-test-key is invalid.'}}
+
+
+class FakeListErrorResponse:
+    is_success = False
+    status_code = 404
+    text = '[{"error":{"code":404,"message":"This model is no longer available. Please use models/gemini-3.8-flash."}}]'
+
+    @staticmethod
+    def json() -> list[dict[str, object]]:
+        return [{'error': {'code': 404, 'message': 'This model is no longer available. Please use models/gemini-3.8-flash.'}}]
+
+
+class FakePlainTextErrorResponse:
+    is_success = False
+    status_code = 400
+    text = 'Unsupported model: invalid-test-model'
+
+    @staticmethod
+    def json() -> dict[str, object]:
+        raise ValueError('Response is not valid JSON')
 
 
 class FakeAsyncClient:
@@ -141,6 +172,73 @@ class AiRoutesTests(unittest.TestCase):
         self.assertIn('Internal error', detail)
         self.assertNotIn('secret-test-key', detail)
         self.assertNotIn('private requirement text', detail)
+
+    def test_bad_request_detail_is_shown_and_api_key_is_redacted(self) -> None:
+        FakeAsyncClient.response = FakeBadRequestResponse()
+        payload = {
+            'provider': 'gemini',
+            'model': 'test-model',
+            'apiKey': 'invalid-test-key',
+            'prompt': 'Reply with exactly: OK',
+            'action': 'connection-test',
+        }
+
+        try:
+            with patch('ai_routes.httpx.AsyncClient', FakeAsyncClient):
+                response = self.client.post('/api/ai/test', headers=self.local_headers, json=payload)
+        finally:
+            FakeAsyncClient.response = FakeResponse()
+
+        self.assertEqual(response.status_code, 502)
+        detail = response.json()['detail']
+        self.assertIn('HTTP 400', detail)
+        self.assertIn('[已遮蔽] is invalid', detail)
+        self.assertNotIn('invalid-test-key', detail)
+
+    def test_plain_text_provider_error_is_returned(self) -> None:
+        FakeAsyncClient.response = FakePlainTextErrorResponse()
+        payload = {
+            'provider': 'gemini',
+            'model': 'invalid-test-model',
+            'apiKey': 'test-secret',
+            'prompt': 'Reply with exactly: OK',
+            'action': 'connection-test',
+        }
+
+        try:
+            with patch('ai_routes.httpx.AsyncClient', FakeAsyncClient):
+                response = self.client.post('/api/ai/test', headers=self.local_headers, json=payload)
+        finally:
+            FakeAsyncClient.response = FakeResponse()
+
+        self.assertEqual(response.status_code, 502)
+        detail = response.json()['detail']
+        self.assertIn('HTTP 400', detail)
+        self.assertIn('Unsupported model', detail)
+        self.assertNotIn('test-secret', detail)
+
+    def test_list_wrapped_provider_error_returns_readable_message(self) -> None:
+        FakeAsyncClient.response = FakeListErrorResponse()
+        payload = {
+            'provider': 'gemini',
+            'model': 'gemini-2.5-flash',
+            'apiKey': 'test-secret',
+            'prompt': 'Reply with exactly: OK',
+            'action': 'connection-test',
+        }
+
+        try:
+            with patch('ai_routes.httpx.AsyncClient', FakeAsyncClient):
+                response = self.client.post('/api/ai/test', headers=self.local_headers, json=payload)
+        finally:
+            FakeAsyncClient.response = FakeResponse()
+
+        self.assertEqual(response.status_code, 502)
+        detail = response.json()['detail']
+        self.assertIn('HTTP 404', detail)
+        self.assertIn('This model is no longer available', detail)
+        self.assertIn('models/gemini-3.8-flash', detail)
+        self.assertNotIn('{"error"', detail)
 
     def test_usage_can_be_cleared(self) -> None:
         response = self.client.delete('/api/ai/usage', headers=self.local_headers)

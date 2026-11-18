@@ -1,12 +1,12 @@
 {
   "name": "mytools",
   "private": true,
-  "version": "7.2.0",
+  "version": "7.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:api": "python_api/.venv/bin/python -m uvicorn app:app --app-dir python_api --host 127.0.0.1 --port 8000 --reload",
-    "dev:local": "bash ./scripts/dev-with-api.sh",
+    "dev:local": "node ./scripts/dev-with-api.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",

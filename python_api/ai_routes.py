@@ -118,19 +118,23 @@ def _safe_provider_error(response: httpx.Response, payload: AiConnectionRequest,
     message = ''
     try:
         error_body = response.json()
+        if isinstance(error_body, list):
+            error_body = next((item for item in error_body if isinstance(item, dict)), {})
         if isinstance(error_body, dict):
             error_value = error_body.get('error')
             if isinstance(error_value, dict):
                 message = str(error_value.get('message') or '')
             elif isinstance(error_value, str):
                 message = error_value
-            elif isinstance(error_body.get('message'), str):
+            if not message and isinstance(error_body.get('message'), str):
                 message = error_body['message']
+            if not message and isinstance(error_body.get('detail'), str):
+                message = error_body['detail']
     except ValueError:
         pass
 
     if not message:
-        return 'Provider 未提供錯誤說明。'
+        message = response.text
 
     sensitive_values = [payload.api_key.get_secret_value(), *untrusted_text]
     for sensitive_value in sensitive_values:
@@ -138,7 +142,7 @@ def _safe_provider_error(response: httpx.Response, payload: AiConnectionRequest,
             message = message.replace(sensitive_value, '[已遮蔽]')
     message = re.sub(r'(?i)(key|token|authorization)\s*[:=]\s*[^\s,;]+', r'\1=[已遮蔽]', message)
     message = ' '.join(message.split())
-    return message[:300]
+    return message[:300] or 'Provider 未提供錯誤說明。'
 
 
 def _extract_response(provider: Provider, body: dict[str, Any]) -> tuple[str, int | None, int | None]:
