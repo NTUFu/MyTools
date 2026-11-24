@@ -608,21 +608,38 @@ onBeforeUnmount(() => {
     <div style="display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; box-sizing: border-box; gap: 5px">
       <!-- Editor section (fixed height) -->
       <div style="display: flex; flex-direction: column; flex-shrink: 0; width: 100%; box-sizing: border-box; gap: 3px; overflow: hidden">
-      <!-- Copy button area -->
-      <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-bottom: 0; min-height: 32px; flex-shrink: 0">
-          <span
-            v-if="copyStatus === 'copied'"
-            style="color: #28a745; font-size: 12px"
-          >
-            ✅ 已複製！
-          </span>
-          <button
-            @click="handleCopy"
-            class="tool-button tool-button--compact"
-            style="--tool-button-bg: #28a745"
-          >
-            複製結果
-          </button>
+        <!-- Editor toolbar -->
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 0; min-height: 32px; flex-shrink: 0">
+          <div style="display: flex; align-items: center">
+            <button
+              @click="handleImportFile"
+              class="tool-button tool-button--compact"
+            >
+              匯入 .json
+            </button>
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept=".json,application/json"
+              style="display: none"
+              @change="onFileSelected"
+            />
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px">
+            <span
+              v-if="copyStatus === 'copied'"
+              style="color: #28a745; font-size: 12px"
+            >
+              ✅ 已複製！
+            </span>
+            <button
+              @click="handleCopy"
+              class="tool-button tool-button--compact"
+              style="--tool-button-bg: #28a745"
+            >
+              複製結果
+            </button>
+          </div>
         </div>
 
         <div :style="editorWrapperStyle">
@@ -688,13 +705,6 @@ onBeforeUnmount(() => {
         </button>
 
         <button
-          @click="handleImportFile"
-          class="tool-button"
-        >
-          匯入 .json
-        </button>
-
-        <button
           @click="handleSaveCurrent"
           class="tool-button"
           style="--tool-button-bg: #2e7d32"
@@ -703,14 +713,6 @@ onBeforeUnmount(() => {
         </button>
 
         <span v-if="saveStatus === 'saved'" style="color: #2e7d32; align-self: center">✅ 已儲存</span>
-
-        <input
-          ref="fileInputRef"
-          type="file"
-          accept=".json,application/json"
-          style="display: none"
-          @change="onFileSelected"
-        />
       </div>
 
       <!-- Tree view section (grows to fill remaining space) -->

@@ -9,6 +9,38 @@ const targetFormat = ref<Format>('yaml')
 const input = ref('{"name":"MyTools","enabled":true}')
 const output = ref('')
 const errorMessage = ref('')
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+const openFilePicker = () => {
+  fileInputRef.value?.click()
+}
+
+const handleFileImport = async (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+
+  const extension = file.name.toLowerCase().match(/\.(json|yaml|toml)$/)?.[1]
+  const format: Format | null =
+    extension === 'json' || extension === 'yaml' || extension === 'toml' ? extension : null
+
+  if (!format) {
+    errorMessage.value = '僅支援 .json、.yaml、.toml 檔案。'
+    target.value = ''
+    return
+  }
+
+  try {
+    input.value = await file.text()
+    sourceFormat.value = format
+    output.value = ''
+    errorMessage.value = ''
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? `檔案讀取失敗：${error.message}` : '檔案讀取失敗。'
+  } finally {
+    target.value = ''
+  }
+}
 
 const parse = (value: string, format: Format): unknown => {
   if (format === 'json') return JSON.parse(value)
@@ -39,6 +71,14 @@ const convert = () => {
     <div class="tool-actions">
       <label>來源 <select v-model="sourceFormat"><option value="json">JSON</option><option value="yaml">YAML</option><option value="toml">TOML</option></select></label>
       <label>目標 <select v-model="targetFormat"><option value="json">JSON</option><option value="yaml">YAML</option><option value="toml">TOML</option></select></label>
+      <button class="tool-button" @click="openFilePicker">匯入檔案</button>
+      <input
+        ref="fileInputRef"
+        type="file"
+        accept=".json,.yaml,.toml"
+        style="display: none"
+        @change="handleFileImport"
+      >
       <button class="tool-button" @click="convert">轉換</button>
     </div>
     <textarea v-model="input" class="tool-textarea" rows="12"></textarea>
