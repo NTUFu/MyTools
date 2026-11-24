@@ -1626,7 +1626,7 @@ const assigneeTaskGroups = computed(() => {
   return Array.from(map.entries())
     .map(([name, items]) => ({
       name,
-      items: [...items].sort((a, b) => getTaskStart(a).getTime() - getTaskStart(b).getTime()),
+      items: items.toSorted((a, b) => getTaskStart(a).getTime() - getTaskStart(b).getTime()),
     }))
     .sort((a, b) => {
       if (b.items.length !== a.items.length) {
@@ -1640,8 +1640,7 @@ const assigneeTaskGroups = computed(() => {
 const unassignedTasks = computed(() => {
   return tasks.value
     .filter((task) => isUnassignedAssignee(task.assignee))
-    .slice()
-    .sort((a, b) => getTaskStart(a).getTime() - getTaskStart(b).getTime())
+    .toSorted((a, b) => getTaskStart(a).getTime() - getTaskStart(b).getTime())
 })
 
 const assigneeDistributionRows = computed(() => {
